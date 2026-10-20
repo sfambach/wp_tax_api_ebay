@@ -2,7 +2,7 @@
 
 eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
-**Status: concept, nothing built.** The draft concept (German) lives with the modeller:
+**Status: step 1 built (connect to eBay, test the connection); nothing is fetched yet.** Decided as D-943. The draft concept (German) lives with the modeller:
 [`docs/pakete/ebay/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/ebay/konzept.md).
 
 ## Idea in short
@@ -14,6 +14,26 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 - eBay orders come from the API, not from mails; duplicates are detected by platform and order number.
 - Later: create listings and link records to running listings.
 - Independent of the stock module; it only fires WordPress actions that other modules may listen to.
+
+## Setup (step 1)
+
+1. At [developer.ebay.com](https://developer.ebay.com) create an account and an application keyset (Production).
+2. Under *User Tokens* create a RuName (eBay Redirect URL name). Enter the two URLs shown on the plugin page
+   *Taxonomy Modeller → eBay*: «Auth accepted URL» and «Auth declined URL».
+3. Add the keys to `wp-config.php` (never to the database, never to a chat):
+
+   ```php
+   define('TAXEBAY_CLIENT_ID', '…');      // App ID
+   define('TAXEBAY_CLIENT_SECRET', '…');  // Cert ID
+   define('TAXEBAY_RUNAME', '…');         // the RuName, not the URL
+   // define('TAXEBAY_SANDBOX', true);    // only for the sandbox keyset
+   ```
+
+4. On the plugin page click «Connect to eBay», sign in and agree. Then «Test connection».
+
+The refresh token is stored sealed (libsodium) with a key derived from the auth salt in `wp-config.php`; changing that
+salt means connecting again. Production keysets also need the *Marketplace account deletion* notification settled in
+the developer portal; this module stores only the eBay user name, so the exemption applies (D-943).
 
 ## License
 
