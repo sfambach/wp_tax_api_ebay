@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.2';
+    public const VERSION    = '0.0.3';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -30,6 +30,7 @@ final class Plugin
         $plugin = new self();
 
         add_action('admin_menu', $plugin->registerMenu(...), 20);
+        add_filter('taxmod_config_tabs', $plugin->registerTab(...));
         add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
         add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
         add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
@@ -37,9 +38,30 @@ final class Plugin
         add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
     }
 
+    /**
+     * The «eBay» tab of the modeller's Configuration page (D-945); the core checks capability and nonce before save.
+     *
+     * @param array<string, array<string, mixed>> $tabs
+     * @return array<string, array<string, mixed>>
+     */
+    public function registerTab(array $tabs): array
+    {
+        $tabs['ebay'] = [
+            'title'  => __('eBay', 'taxebay'),
+            'render' => fn (): string => (new SettingsScreen())->fields($this->takeNotices()),
+            'save'   => static fn (array $post): bool => self::saveKeys($post),
+        ];
+
+        return $tabs;
+    }
+
+    /** Only for a modeller without the tabs of D-945: then the module keeps its own page. */
     public function registerMenu(): void
     {
-        // Under the modeller's menu when it is there, like the other modules.
+        if (self::hasConfigTabs()) {
+            return;
+        }
+
         $parent = isset($GLOBALS['admin_page_hooks']['taxmod']) ? 'taxmod' : 'options-general.php';
 
         add_submenu_page(
@@ -49,96 +71,47 @@ final class Plugin
             self::CAPABILITY,
             self::PAGE,
             function (): void {
-                print (new SettingsScreen())->render($this->takeNotices());
+                print (new SettingsScreen())->page($this->takeNotices());
             }
         );
     }
 
-    public function handleConnect(): void
+    public static function settingsUrl(): string
     {
-        $keys = $this->keysOrBack('taxebay_connect');
-        $state = wp_generate_password(32, false);
-        set_transient(self::STATE . get_current_user_id(), $state, 15 * MINUTE_IN_SECONDS);
-
-        // eBay's own host, which wp_safe_redirect would refuse.
-        wp_redirect((new TokenClient($keys, new WpHttpTransport()))->consentUrl($state));
-        exit;
+        return self::hasConfigTabs()
+            ? admin_url('admin.php?page=taxmod-settings&tab=ebay')
+            : admin_url('admin.php?page=' . self::PAGE);
     }
 
-    /** eBay sends him back here with `code` and `state`; the state stands in for the nonce (CD-5). */
-    public function handleReturn(): void
+    private static function hasConfigTabs(): bool
     {
-        if (! current_user_can(self::CAPABILITY)) {
-            wp_die(esc_html__('You may not change the eBay connection.', 'taxebay'), 403);
-        }
-
-        $key = self::STATE . get_current_user_id();
-        $expected = (string) get_transient($key);
-        delete_transient($key);
-        $state = isset($_GET['state']) ? sanitize_text_field(wp_unslash($_GET['state'])) : '';
-
-        if ($expected === '' || ! hash_equals($expected, $state)) {
-            wp_die(esc_html__('This answer from eBay does not belong to a connection you started. Please connect again.', 'taxebay'), 403);
-        }
-
-        $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
-        $keys = Settings::appKeys();
-
-        if ($code === '' || $keys === null) {
-            $this->notice(false, __('eBay sent no consent code — the connection was declined or cancelled.', 'taxebay'));
-            $this->back();
-        }
-
-        try {
-            $http = new WpHttpTransport();
-            $tokens = (new TokenClient($keys, $http))->exchangeCode($code, time());
-            $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
-            Settings::saveConnection(Settings::vault()->seal((string) $tokens->refreshToken), (int) $tokens->refreshExpiresAt, $username);
-            /* translators: %s: eBay user name */
-            $this->notice(true, sprintf(__('Connected as %s.', 'taxebay'), $username));
-        } catch (EbayApiException $failure) {
-            /* translators: %s: eBay's answer */
-            $this->notice(false, sprintf(__('Not connected: %s', 'taxebay'), $failure->getMessage()));
-        }
-
-        $this->back();
+        return defined('Taxmod\WordPress\Admin\SettingsScreen::TABS_FILTER');
     }
 
-    public function handleCheck(): void
-    {
-        $keys = $this->keysOrBack('taxebay_check');
-        $connection = Settings::connection();
-
-        if ($connection === null) {
-            $this->notice(false, __('Not connected yet.', 'taxebay'));
-            $this->back();
-        }
-
-        try {
-            $http = new WpHttpTransport();
-            $tokens = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time());
-            $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
-            /* translators: %s: eBay user name */
-            $this->notice(true, sprintf(__('Connection works: eBay knows this site as %s.', 'taxebay'), $username));
-        } catch (EbayApiException | RuntimeException $failure) {
-            /* translators: %s: reason */
-            $this->notice(false, sprintf(__('Connection test failed: %s', 'taxebay'), $failure->getMessage()));
-        }
-
-        $this->back();
-    }
-
+    /** The fallback page's own form; the tab saves through the modeller. */
     public function handleSaveKeys(): void
     {
         $this->guard('taxebay_save_keys');
-
-        $field = static fn (string $name): string => isset($_POST[$name]) ? trim(sanitize_text_field(wp_unslash($_POST[$name]))) : '';
-        Settings::saveKeys($field('client_id'), $field('client_secret'), $field('runame'), isset($_POST['sandbox']));
-
-        $this->notice(true, Settings::appKeys() === null
-            ? __('Saved, but the keys are incomplete.', 'taxebay')
-            : __('Keys saved.', 'taxebay'));
+        $this->notice(true, self::saveKeys(wp_unslash($_POST)) ? __('Keys saved.', 'taxebay') : __('Saved, but the keys are incomplete.', 'taxebay'));
         $this->back();
+    }
+
+    /**
+     * Validates and sanitizes the key fields; capability and nonce are checked by the caller.
+     *
+     * @param array<string, mixed> $post already unslashed
+     * @return bool whether the keys are complete now
+     */
+    private static function saveKeys(array $post): bool
+    {
+        if (Settings::keysFromConstants() !== null) {
+            return true;
+        }
+
+        $field = static fn (string $name): string => is_string($post[$name] ?? null) ? trim(sanitize_text_field($post[$name])) : '';
+        Settings::saveKeys($field('taxebay_client_id'), $field('taxebay_client_secret'), $field('taxebay_runame'), isset($post['taxebay_sandbox']));
+
+        return Settings::appKeys() !== null;
     }
 
     /** Forgets the token here; the consent at eBay stays until he revokes it in his eBay account. */
@@ -166,7 +139,7 @@ final class Plugin
         $keys = Settings::appKeys();
 
         if ($keys === null) {
-            $this->notice(false, __('The app keys are missing — enter them below or in wp-config.php.', 'taxebay'));
+            $this->notice(false, __('The app keys are missing — enter and save them first, or define them in wp-config.php.', 'taxebay'));
             $this->back();
         }
 
@@ -175,7 +148,7 @@ final class Plugin
 
     private function back(): never
     {
-        wp_safe_redirect(admin_url('admin.php?page=' . self::PAGE));
+        wp_safe_redirect(self::settingsUrl());
         exit;
     }
 

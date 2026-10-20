@@ -13,9 +13,9 @@ use TaxEbay\Core\Secret\TokenVault;
  */
 final class Settings
 {
-    public const CONNECTION = 'taxebay_connection';
+    public const CONNECTION = 'taxmod_ebay_connection';
 
-    public const KEYS = 'taxebay_keys';
+    public const KEYS = 'taxmod_ebay_keys';
 
     /** Constants in wp-config.php win; otherwise the keys entered on the settings page (his word 2026-10-20: «ja verschlüsselt einbauen»). */
     public static function appKeys(): ?AppKeys
