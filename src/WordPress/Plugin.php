@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.1';
+    public const VERSION    = '0.0.2';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -30,6 +30,7 @@ final class Plugin
         $plugin = new self();
 
         add_action('admin_menu', $plugin->registerMenu(...), 20);
+        add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
         add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
         add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
         add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
@@ -127,6 +128,19 @@ final class Plugin
         $this->back();
     }
 
+    public function handleSaveKeys(): void
+    {
+        $this->guard('taxebay_save_keys');
+
+        $field = static fn (string $name): string => isset($_POST[$name]) ? trim(sanitize_text_field(wp_unslash($_POST[$name]))) : '';
+        Settings::saveKeys($field('client_id'), $field('client_secret'), $field('runame'), isset($_POST['sandbox']));
+
+        $this->notice(true, Settings::appKeys() === null
+            ? __('Saved, but the keys are incomplete.', 'taxebay')
+            : __('Keys saved.', 'taxebay'));
+        $this->back();
+    }
+
     /** Forgets the token here; the consent at eBay stays until he revokes it in his eBay account. */
     public function handleDisconnect(): void
     {
@@ -152,7 +166,7 @@ final class Plugin
         $keys = Settings::appKeys();
 
         if ($keys === null) {
-            $this->notice(false, __('The app keys are missing in wp-config.php.', 'taxebay'));
+            $this->notice(false, __('The app keys are missing — enter them below or in wp-config.php.', 'taxebay'));
             $this->back();
         }
 

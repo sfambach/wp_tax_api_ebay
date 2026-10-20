@@ -20,7 +20,8 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 1. At [developer.ebay.com](https://developer.ebay.com) create an account and an application keyset (Production).
 2. Under *User Tokens* create a RuName (eBay Redirect URL name). Enter the two URLs shown on the plugin page
    *Taxonomy Modeller → eBay*: «Auth accepted URL» and «Auth declined URL».
-3. Add the keys to `wp-config.php` (never to the database, never to a chat):
+3. Enter the keys on the plugin page (the Cert ID is stored encrypted), or define them in `wp-config.php`, which
+   takes precedence. Never post them in a chat:
 
    ```php
    define('TAXEBAY_CLIENT_ID', '…');      // App ID

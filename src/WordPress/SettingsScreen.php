@@ -24,16 +24,15 @@ final class SettingsScreen
         $keys = Settings::appKeys();
         $html .= '<h2>' . esc_html__('1 · App keys', 'taxebay') . '</h2>';
 
-        if ($keys === null) {
-            $html .= '<p>' . esc_html__('Not set. Create an app at developer.ebay.com and add its keys to wp-config.php:', 'taxebay') . '</p>'
-                . '<pre>' . esc_html("define('TAXEBAY_CLIENT_ID', '…');\ndefine('TAXEBAY_CLIENT_SECRET', '…');\ndefine('TAXEBAY_RUNAME', '…');\n// define('TAXEBAY_SANDBOX', true);") . '</pre>';
-        } else {
+        if (Settings::keysFromConstants() !== null) {
             $html .= '<p>' . esc_html(sprintf(
                 /* translators: 1: environment, 2: client id */
-                __('Set (%1$s, App ID %2$s).', 'taxebay'),
-                $keys->environment->value,
-                $keys->clientId
+                __('Set in wp-config.php (%1$s, App ID %2$s). These take precedence over the form.', 'taxebay'),
+                $keys?->environment->value ?? '',
+                $keys?->clientId ?? ''
             )) . '</p>';
+        } else {
+            $html .= $this->keysForm();
         }
 
         $html .= '<h2>' . esc_html__('2 · URLs for the RuName at eBay', 'taxebay') . '</h2>'
@@ -62,6 +61,33 @@ final class SettingsScreen
         }
 
         return $html . '</div>';
+    }
+
+    /** The secret is never sent back to the browser; an empty field keeps the stored one. */
+    private function keysForm(): string
+    {
+        $stored = Settings::storedKeys();
+        $hasSecret = $stored['client_secret'] !== '';
+
+        $html = '<p>' . esc_html__('From your app at developer.ebay.com. The Cert ID is stored encrypted. Alternatively define TAXEBAY_CLIENT_ID, TAXEBAY_CLIENT_SECRET and TAXEBAY_RUNAME in wp-config.php.', 'taxebay') . '</p>'
+            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<input type="hidden" name="action" value="taxebay_save_keys">' . wp_nonce_field('taxebay_save_keys', '_wpnonce', true, false)
+            . '<table class="form-table" role="presentation"><tbody>'
+            . $this->inputRow('client_id', __('App ID (Client ID)', 'taxebay'), 'text', $stored['client_id'], '')
+            . $this->inputRow('client_secret', __('Cert ID (Client Secret)', 'taxebay'), 'password', '', $hasSecret ? __('stored — leave empty to keep it', 'taxebay') : '')
+            . $this->inputRow('runame', __('RuName', 'taxebay'), 'text', $stored['runame'], '')
+            . '<tr><th scope="row">' . esc_html__('Environment', 'taxebay') . '</th><td><label><input type="checkbox" name="sandbox" value="1"'
+            . checked($stored['sandbox'], true, false) . '> ' . esc_html__('Sandbox keyset', 'taxebay') . '</label></td></tr>'
+            . '</tbody></table>' . get_submit_button(__('Save keys', 'taxebay'), 'secondary') . '</form>';
+
+        return $html;
+    }
+
+    private function inputRow(string $name, string $label, string $type, string $value, string $placeholder): string
+    {
+        return '<tr><th scope="row"><label for="taxebay-' . esc_attr($name) . '">' . esc_html($label) . '</label></th>'
+            . '<td><input type="' . esc_attr($type) . '" class="regular-text" autocomplete="off" id="taxebay-' . esc_attr($name)
+            . '" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '" placeholder="' . esc_attr($placeholder) . '"></td></tr>';
     }
 
     private function urlRow(string $label, string $url): string
