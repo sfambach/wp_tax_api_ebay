@@ -44,6 +44,8 @@ final class SettingsScreen
             . $this->urlRow(__('Auth declined URL', 'taxebay'), Plugin::settingsUrl())
             . '</tbody></table>';
 
+        $html .= $this->accountDeletion();
+
         $connection = Settings::connection();
         $html .= '<h2>' . esc_html__('3 · Account', 'taxebay') . '</h2>';
 
@@ -65,6 +67,30 @@ final class SettingsScreen
         }
 
         return $html . $this->fetchSchedule();
+    }
+
+    /** What he enters at eBay under «Alerts & Notifications» → Marketplace Account Deletion, and what eBay reported. */
+    private function accountDeletion(): string
+    {
+        $html = '<h3>' . esc_html__('Marketplace account deletion (required by eBay)', 'taxebay') . '</h3>'
+            . '<p>' . esc_html__('Enter both values at eBay, then press «Send Test Notification» there.', 'taxebay') . '</p>'
+            . '<table class="form-table" role="presentation"><tbody>'
+            . $this->urlRow(__('Notification endpoint', 'taxebay'), AccountDeletionEndpoint::url())
+            . $this->urlRow(__('Verification token', 'taxebay'), AccountDeletionEndpoint::token())
+            . '</tbody></table>';
+        $log = AccountDeletionEndpoint::log();
+
+        if ($log !== []) {
+            $html .= '<p>' . esc_html__('eBay reported these deleted accounts; remove their user names from the model if they occur there:', 'taxebay') . '</p><ul>';
+
+            foreach (array_slice($log, 0, 10) as $entry) {
+                $html .= '<li>' . esc_html($entry['at'] . ' — ' . ($entry['username'] !== '' ? $entry['username'] : $entry['user_id'])) . '</li>';
+            }
+
+            $html .= '</ul>';
+        }
+
+        return $html;
     }
 
     /** Purchases go to the modeller's inbox; its schedule asks this module how often (D-943 E7, D-953). */

@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.7';
+    public const VERSION    = '0.0.8';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -36,6 +36,7 @@ final class Plugin
         add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
         add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
         add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
+        add_action('rest_api_init', AccountDeletionEndpoint::register(...));
         add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
     }
 
