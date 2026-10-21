@@ -19,7 +19,7 @@ use TaxEbay\Core\Purchases\PurchasesClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.11';
+    public const VERSION    = '0.0.12';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 

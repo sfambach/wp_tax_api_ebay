@@ -66,7 +66,28 @@ final class SettingsScreen
                 . $this->action('taxebay_disconnect', __('Disconnect', 'taxebay'), false) . '</p>';
         }
 
-        return $html . $this->fetchSchedule();
+        return '<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start"><div style="flex:1 1 40em;min-width:0">'
+            . $html . $this->fetchSchedule() . '</div>' . $this->guide() . '</div>';
+    }
+
+    /** The whole way from an eBay account to purchases in the inbox, beside the fields it talks about. */
+    private function guide(): string
+    {
+        $steps = [
+            __('Open developer.ebay.com and create a developer account (eBay approves it within about a day).', 'taxebay'),
+            __('Under «Application Access Keys», create a Production keyset. Copy App ID and Cert ID into section 1; the Dev ID is not needed.', 'taxebay'),
+            __('Under «Alerts & Notifications», enter your email and save, then enter the notification endpoint and verification token from this tab and press «Send Test Notification». eBay will not release the keys without it.', 'taxebay'),
+            __('Under «User Tokens» → «Get a Token from eBay via Your Application» → «Add eBay Redirect URL», enter the two URLs from section 2, choose OAuth and save. Copy the RuName from that row into section 1 and save here.', 'taxebay'),
+            __('Press «Connect to eBay» in section 3, sign in at eBay and agree. Back here, «Test connection» shows your eBay name.', 'taxebay'),
+            __('In the Inbox, press «Fetch now» for eBay. eBay answers for the last 90 days; afterwards the module fetches on the schedule in section 4.', 'taxebay'),
+        ];
+        $html = '<aside class="postbox" style="flex:0 1 24em;padding:0 16px 8px"><h2>' . esc_html__('How to connect', 'taxebay') . '</h2><ol>';
+
+        foreach ($steps as $step) {
+            $html .= '<li>' . esc_html($step) . '</li>';
+        }
+
+        return $html . '</ol><p class="description">' . esc_html__('The consent lasts 18 months; then press «Connect again». Keys and tokens are stored encrypted.', 'taxebay') . '</p></aside>';
     }
 
     /** What he enters at eBay under «Alerts & Notifications» → Marketplace Account Deletion, and what eBay reported. */
