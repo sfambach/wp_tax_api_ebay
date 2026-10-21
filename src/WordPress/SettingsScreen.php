@@ -66,12 +66,25 @@ final class SettingsScreen
                 . $this->action('taxebay_disconnect', __('Disconnect', 'taxebay'), false) . '</p>';
         }
 
+        $html .= $this->fetchSchedule();
+
+        if (self::modellerDrawsGuide()) {
+            return $html;
+        }
+
         return '<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start"><div style="flex:1 1 40em;min-width:0">'
-            . $html . $this->fetchSchedule() . '</div>' . $this->guide() . '</div>';
+            . $html . '</div><aside class="postbox" style="flex:0 1 24em;padding:0 16px 8px"><h2>'
+            . esc_html__('How to connect', 'taxebay') . '</h2>' . $this->guide() . '</aside></div>';
+    }
+
+    /** From modeller 0.1.41 the tab's `guide` is drawn by the modeller beside the form (D-963). */
+    public static function modellerDrawsGuide(): bool
+    {
+        return class_exists(\Taxmod\WordPress\Plugin::class) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.1.41', '>=');
     }
 
     /** The whole way from an eBay account to purchases in the inbox, beside the fields it talks about. */
-    private function guide(): string
+    public function guide(): string
     {
         $steps = [
             __('Open developer.ebay.com and create a developer account (eBay approves it within about a day).', 'taxebay'),
@@ -81,13 +94,13 @@ final class SettingsScreen
             __('Press «Connect to eBay» in section 3, sign in at eBay and agree. Back here, «Test connection» shows your eBay name.', 'taxebay'),
             __('In the Inbox, press «Fetch now» for eBay. eBay answers for the last 90 days; afterwards the module fetches on the schedule in section 4.', 'taxebay'),
         ];
-        $html = '<aside class="postbox" style="flex:0 1 24em;padding:0 16px 8px"><h2>' . esc_html__('How to connect', 'taxebay') . '</h2><ol>';
+        $html = '<ol>';
 
         foreach ($steps as $step) {
             $html .= '<li>' . esc_html($step) . '</li>';
         }
 
-        return $html . '</ol><p class="description">' . esc_html__('The consent lasts 18 months; then press «Connect again». Keys and tokens are stored encrypted.', 'taxebay') . '</p></aside>';
+        return $html . '</ol><p class="description">' . esc_html__('The consent lasts 18 months; then press «Connect again». Keys and tokens are stored encrypted.', 'taxebay') . '</p>';
     }
 
     /** What he enters at eBay under «Alerts & Notifications» → Marketplace Account Deletion, and what eBay reported. */

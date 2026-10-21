@@ -19,7 +19,7 @@ use TaxEbay\Core\Purchases\PurchasesClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.12';
+    public const VERSION    = '0.0.13';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -57,6 +57,7 @@ final class Plugin
             'title'  => __('eBay', 'taxebay'),
             'render' => fn (): string => (new SettingsScreen())->fields($this->takeNotices()),
             'save'   => static fn (array $post): bool => self::saveKeys($post),
+            'guide'  => static fn (): string => (new SettingsScreen())->guide(),
         ];
 
         return $tabs;
