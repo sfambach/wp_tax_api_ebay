@@ -60,11 +60,49 @@ final class SettingsScreen
                 $connection['refresh_expires'] > 0 ? wp_date('Y-m-d', $connection['refresh_expires']) : '?'
             )) . '</p><p>'
                 . $this->action('taxebay_check', __('Test connection', 'taxebay'), true) . ' '
+                . $this->action('taxebay_purchases', __('Check purchases', 'taxebay'), false) . ' '
                 . $this->action('taxebay_connect', __('Connect again', 'taxebay'), false) . ' '
                 . $this->action('taxebay_disconnect', __('Disconnect', 'taxebay'), false) . '</p>';
         }
 
-        return $html;
+        return $html . $this->purchaseCheck();
+    }
+
+    /** The last «Check purchases» result: newest first, missing ones marked (D-950). */
+    private function purchaseCheck(): string
+    {
+        $result = PurchaseCheck::last();
+
+        if ($result === null) {
+            return '';
+        }
+
+        $html = '<h2>' . esc_html__('4 · Purchases on eBay', 'taxebay') . '</h2><p>' . esc_html(sprintf(
+            /* translators: 1: time, 2: days */
+            __('Checked %1$s; eBay answers for the last %2$d days only.', 'taxebay'),
+            (string) $result['checked_at'],
+            \TaxEbay\Core\Purchases\PurchasesClient::MAX_DAYS_BACK
+        )) . '</p>';
+
+        if (! $result['model']) {
+            $html .= '<p>' . esc_html__('Taxmod Mail or the modeller is not active, so nothing could be compared with the model.', 'taxebay') . '</p>';
+        }
+
+        $html .= '<table class="widefat striped"><caption class="screen-reader-text">' . esc_html__('Purchases on eBay', 'taxebay') . '</caption><thead><tr>'
+            . '<th>' . esc_html__('Date', 'taxebay') . '</th><th>' . esc_html__('Order number', 'taxebay') . '</th><th>' . esc_html__('Seller', 'taxebay') . '</th>'
+            . '<th>' . esc_html__('Items', 'taxebay') . '</th><th>' . esc_html__('Total', 'taxebay') . '</th><th>' . esc_html__('In the model', 'taxebay') . '</th>'
+            . '</tr></thead><tbody>';
+
+        foreach ((array) $result['rows'] as $row) {
+            $proposal = (array) $row['proposal'];
+            $items = array_map(static fn (array $line): string => sprintf('%s × %s', (string) $line['quantity'], (string) $line['title']), (array) $proposal['lines']);
+            $html .= '<tr><td>' . esc_html((string) $proposal['order_date']) . '</td><td>' . esc_html((string) $proposal['order_number']) . '</td>'
+                . '<td>' . esc_html((string) $proposal['counterparty']) . '</td><td>' . implode('<br>', array_map('esc_html', $items)) . '</td>'
+                . '<td>' . esc_html(trim((string) $proposal['total'] . ' ' . (string) $proposal['currency'])) . '</td>'
+                . '<td>' . esc_html(match ($row['known']) { true => __('yes', 'taxebay'), false => __('missing', 'taxebay'), default => '?' }) . '</td></tr>';
+        }
+
+        return $html . '</tbody></table>';
     }
 
     /** @param list<array{ok: bool, text: string}> $notices */

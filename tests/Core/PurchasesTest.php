@@ -1,0 +1,82 @@
+<?php declare(strict_types=1);
+
+namespace TaxEbay\Tests\Core;
+
+use DateTimeImmutable;
+use PHPUnit\Framework\TestCase;
+use TaxEbay\Core\Api\EbayApiException;
+use TaxEbay\Core\Api\Environment;
+use TaxEbay\Core\Api\HttpResponse;
+use TaxEbay\Core\Purchases\PurchaseMapper;
+use TaxEbay\Core\Purchases\PurchasesClient;
+use TaxEbay\Core\Purchases\Reconciliation;
+
+/** The fixture follows eBay's documented GetOrders answer, not a measured one. */
+final class PurchasesTest extends TestCase
+{
+    private const EMPTY_LAST_PAGE = '<?xml version="1.0"?><GetOrdersResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Success</Ack><HasMoreOrders>false</HasMoreOrders><OrderArray/></GetOrdersResponse>';
+
+    private static function page1(): string
+    {
+        return (string) file_get_contents(__DIR__ . '/fixtures/getorders-buyer-page1.xml');
+    }
+
+    public function testReadsPagesAsBuyerWithTheOauthToken(): void
+    {
+        $http = new ScriptedTransport([new HttpResponse(200, self::page1()), new HttpResponse(200, self::EMPTY_LAST_PAGE)]);
+
+        $orders = (new PurchasesClient(Environment::Production, $http))
+            ->ordersCreatedBetween('token', new DateTimeImmutable('2026-07-23T00:00:00Z'), new DateTimeImmutable('2026-10-21T00:00:00Z'));
+
+        self::assertCount(1, $orders);
+        self::assertCount(2, $http->sent);
+        self::assertSame('https://api.ebay.com/ws/api.dll', $http->sent[0]->url);
+        self::assertSame('GetOrders', $http->sent[0]->headers['X-EBAY-API-CALL-NAME']);
+        self::assertSame('token', $http->sent[0]->headers['X-EBAY-API-IAF-TOKEN']);
+        self::assertStringContainsString('<OrderRole>Buyer</OrderRole>', $http->sent[0]->body);
+        self::assertStringContainsString('<CreateTimeFrom>2026-07-23T00:00:00.000Z</CreateTimeFrom>', $http->sent[0]->body);
+        self::assertStringContainsString('<PageNumber>2</PageNumber>', $http->sent[1]->body);
+    }
+
+    public function testFailureCarriesEbaysMessage(): void
+    {
+        $http = new ScriptedTransport([new HttpResponse(200, '<?xml version="1.0"?><GetOrdersResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Failure</Ack><Errors><LongMessage>Invalid token.</LongMessage></Errors></GetOrdersResponse>')]);
+
+        $this->expectException(EbayApiException::class);
+        $this->expectExceptionMessage('Invalid token.');
+        (new PurchasesClient(Environment::Production, $http))->ordersCreatedBetween('t', new DateTimeImmutable(), new DateTimeImmutable());
+    }
+
+    public function testMapsAPurchaseToTheSharedProposal(): void
+    {
+        $http = new ScriptedTransport([new HttpResponse(200, self::page1()), new HttpResponse(200, self::EMPTY_LAST_PAGE)]);
+        $order = (new PurchasesClient(Environment::Production, $http))->ordersCreatedBetween('t', new DateTimeImmutable(), new DateTimeImmutable())[0];
+        $mapper = new PurchaseMapper();
+
+        self::assertSame([
+            'platform'      => 'eBay',
+            'order_number'  => '05-12345-67890',
+            'kind'          => 'ordered',
+            'order_date'    => '2026-09-30',
+            'currency'      => 'EUR',
+            'lines'         => [['title' => '10x NE555 Timer DIP-8', 'quantity' => 2.0, 'unit_price' => '3.90', 'article_number' => '126000000001']],
+            'shipping_cost' => '2.50',
+            'total'         => '10.30',
+            'counterparty'  => 'chip-haendler',
+            'fees'          => null,
+            'shipped_date'  => '2026-10-01',
+            'tracking'      => ['JJD000390007'],
+        ], $mapper->map($order));
+        self::assertSame(['05-12345-67890', '05-12345-67890!5000000000001'], $mapper->orderNumbers($order));
+        self::assertFalse($mapper->isCancelled($order));
+    }
+
+    public function testReconciliationMatchesAnyNumberIgnoringCaseAndSpaces(): void
+    {
+        $reconciliation = new Reconciliation([' 05-12345-67890 ', 'AB-1']);
+
+        self::assertTrue($reconciliation->isKnown(['x', '05-12345-67890']));
+        self::assertTrue($reconciliation->isKnown(['ab-1']));
+        self::assertFalse($reconciliation->isKnown(['05-99999-00000']));
+    }
+}

@@ -51,16 +51,16 @@ jobs:
 
       - name: Create ZIP
         run: |
-          mkdir -p ../dist/wp-tax-ebay
-          git archive HEAD | tar -x -C ../dist/wp-tax-ebay
-          cd ../dist && zip -qr "$GITHUB_WORKSPACE/wp-tax-ebay-${{ github.event.inputs.tag }}.zip" wp-tax-ebay
+          mkdir -p ../dist/wp-tax-api-ebay
+          git archive HEAD | tar -x -C ../dist/wp-tax-api-ebay
+          cd ../dist && zip -qr "$GITHUB_WORKSPACE/wp-tax-api-ebay-${{ github.event.inputs.tag }}.zip" wp-tax-api-ebay
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           target_commitish: ${{ steps.release_commit.outputs.sha }}
-          files: wp-tax-ebay-${{ github.event.inputs.tag }}.zip
-          name: wp-tax-ebay ${{ github.event.inputs.tag }}
+          files: wp-tax-api-ebay-${{ github.event.inputs.tag }}.zip
+          name: wp-tax-api-ebay ${{ github.event.inputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

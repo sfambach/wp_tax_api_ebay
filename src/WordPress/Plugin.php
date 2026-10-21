@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.3';
+    public const VERSION    = '0.0.4';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -35,6 +35,7 @@ final class Plugin
         add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
         add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
         add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
+        add_action('admin_post_taxebay_purchases', $plugin->handlePurchaseCheck(...));
         add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
     }
 
@@ -112,6 +113,35 @@ final class Plugin
         Settings::saveKeys($field('taxebay_client_id'), $field('taxebay_client_secret'), $field('taxebay_runame'), isset($post['taxebay_sandbox']));
 
         return Settings::appKeys() !== null;
+    }
+
+    /** D-950, first step: what eBay says he bought against what the model has. Reads only. */
+    public function handlePurchaseCheck(): void
+    {
+        $keys = $this->keysOrBack('taxebay_purchases');
+        $connection = Settings::connection();
+
+        if ($connection === null) {
+            $this->notice(false, __('Not connected yet.', 'taxebay'));
+            $this->back();
+        }
+
+        try {
+            $result = (new PurchaseCheck())->run($keys, $connection);
+            PurchaseCheck::remember($result);
+            $missing = count(array_filter($result['rows'], static fn (array $row): bool => $row['known'] === false));
+            $this->notice(true, sprintf(
+                /* translators: 1: purchases eBay returned, 2: of them missing in the model */
+                __('%1$d purchases read from eBay, %2$d of them missing in the model.', 'taxebay'),
+                count($result['rows']),
+                $missing
+            ));
+        } catch (EbayApiException | RuntimeException $failure) {
+            /* translators: %s: reason */
+            $this->notice(false, sprintf(__('Reading purchases failed: %s', 'taxebay'), $failure->getMessage()));
+        }
+
+        $this->back();
     }
 
     /** Forgets the token here; the consent at eBay stays until he revokes it in his eBay account. */

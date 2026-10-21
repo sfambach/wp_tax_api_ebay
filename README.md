@@ -1,8 +1,8 @@
-# Taxmod eBay
+# Taxmod API eBay
 
 eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
-**Status: step 1 built (connect to eBay, test the connection); nothing is fetched yet.** Decided as D-943. The draft concept (German) lives with the modeller:
+**Status: connect, test, and a read-only check of purchases against the model (D-950); nothing is written yet.** Decided as D-943, D-950; proposals and review move into the modeller (D-952). Secrets are always stored encrypted (D-951). The draft concept (German) lives with the modeller:
 [`docs/pakete/ebay/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/ebay/konzept.md).
 
 ## Idea in short

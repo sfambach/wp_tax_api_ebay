@@ -1,6 +1,6 @@
 {
-    "name": "sfambach/wp-tax-ebay",
-    "description": "Taxmod eBay — offers eBay sales and purchases to the Taxonomy Modeller as proposals.",
+    "name": "sfambach/wp-tax-api-ebay",
+    "description": "Taxmod API eBay — offers eBay sales and purchases to the Taxonomy Modeller as proposals.",
     "type": "wordpress-plugin",
     "license": "proprietary",
     "require": {
