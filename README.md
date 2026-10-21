@@ -10,6 +10,7 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 - Connects to the owner's eBay account through the official eBay APIs (OAuth, one-time consent).
 - Fetches sales (Sell Fulfillment API, fees from the Finances API) and, if the API allows it, purchases (Trading API `GetOrders`, buyer role).
 - Turns each eBay order into a proposal in the same shape as [Taxmod Mail](https://github.com/sfambach/wp_tax_mail). The owner reviews it and picks the line items to import.
+- Needs the Taxonomy Modeller 0.1.31 or later: its vault seals every secret (D-951) and its inbox owns proposals and review (D-952, D-953).
 - Only the picked items are written, through the modeller's `taxmod/write-data` path. Buyer name and address are never stored, only the eBay user name.
 - eBay orders come from the API, not from mails; duplicates are detected by platform and order number.
 - Later: create listings and link records to running listings.

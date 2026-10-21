@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "68b14d829c58244fcba755473fc9d5f0",
+    "content-hash": "9522def4444a93cc705337bb685cc10b",
     "packages": [],
     "packages-dev": [
         {
@@ -1610,6 +1610,54 @@
             "time": "2023-02-07T11:34:05+00:00"
         },
         {
+            "name": "sfambach/wp-taxonomy-modeler",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/sfambach/wp-taxonomy-modeler.git",
+                "reference": "7bd5eb23b6e85829614d903461842dc0a7d7e13b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/7bd5eb23b6e85829614d903461842dc0a7d7e13b",
+                "reference": "7bd5eb23b6e85829614d903461842dc0a7d7e13b",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.2"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^10"
+            },
+            "default-branch": true,
+            "type": "wordpress-plugin",
+            "autoload": {
+                "psr-4": {
+                    "Taxmod\\Core\\": "src/Core/",
+                    "Taxmod\\WordPress\\": "src/WordPress/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Taxmod\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ]
+            },
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "description": "Taxonomy Modeller — build data models as a tree of nodes and relations.",
+            "support": {
+                "source": "https://github.com/sfambach/wp-taxonomy-modeler/tree/claude/project-thread-0d3ttf",
+                "issues": "https://github.com/sfambach/wp-taxonomy-modeler/issues"
+            },
+            "time": "2026-10-21T11:48:00+00:00"
+        },
+        {
             "name": "theseer/tokenizer",
             "version": "1.3.1",
             "source": {
@@ -1662,7 +1710,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "sfambach/wp-taxonomy-modeler": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {

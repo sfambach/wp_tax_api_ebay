@@ -3,17 +3,20 @@
 namespace TaxEbay\Core\Purchases;
 
 use SimpleXMLElement;
+use Taxmod\Core\Import\OrderProposal;
+use Taxmod\Core\Import\ProposalKind;
+use Taxmod\Core\Import\ProposalLine;
 
 /**
- * Turns one Trading API `<Order>` he bought into the proposal shape shared with tax_mail (D-942, D-943), kind
- * «ordered». The seller's user name is the merchant; no address is taken.
+ * Turns one Trading API `<Order>` he bought into the modeller's `OrderProposal` (D-952, D-953), kind «ordered»,
+ * source «ebay». The seller's user name is the merchant; no address is taken.
  */
 final class PurchaseMapper
 {
     public const PLATFORM = 'eBay';
+    public const SOURCE = 'ebay';
 
-    /** @return array<string, mixed> the shared proposal shape; `mixed` because the lines nest */
-    public function map(SimpleXMLElement $order): array
+    public function map(SimpleXMLElement $order): OrderProposal
     {
         $lines = [];
         $tracking = [];
@@ -21,12 +24,12 @@ final class PurchaseMapper
         $seller = trim((string) ($order->SellerUserID ?? ''));
 
         foreach ($order->TransactionArray->Transaction ?? [] as $transaction) {
-            $lines[] = [
-                'title'          => trim((string) $transaction->Item->Title),
-                'quantity'       => (float) ((int) $transaction->QuantityPurchased ?: 1),
-                'unit_price'     => self::amount($transaction->TransactionPrice ?? null),
-                'article_number' => trim((string) $transaction->Item->ItemID) ?: null,
-            ];
+            $lines[] = new ProposalLine(
+                trim((string) $transaction->Item->Title),
+                (float) ((int) $transaction->QuantityPurchased ?: 1),
+                self::amount($transaction->TransactionPrice ?? null),
+                trim((string) $transaction->Item->ItemID) ?: null,
+            );
 
             foreach ($transaction->ShippingDetails->ShipmentTrackingDetails ?? [] as $detail) {
                 $number = trim((string) $detail->ShipmentTrackingNumber);
@@ -44,20 +47,24 @@ final class PurchaseMapper
         $date = self::day((string) ($order->ShippedTime ?? ''));
         $shipped = $shipped ?? $date;
 
-        return [
-            'platform'      => self::PLATFORM,
-            'order_number'  => trim((string) $order->OrderID),
-            'kind'          => 'ordered',
-            'order_date'    => self::day((string) $order->CreatedTime),
-            'currency'      => (string) ($order->Total['currencyID'] ?? 'EUR') ?: 'EUR',
-            'lines'         => $lines,
-            'shipping_cost' => self::amount($order->ShippingServiceSelected->ShippingServiceCost ?? null),
-            'total'         => self::amount($order->Total ?? null),
-            'counterparty'  => $seller === '' ? null : $seller,
-            'fees'          => null,
-            'shipped_date'  => $shipped,
-            'tracking'      => array_values(array_unique($tracking)),
-        ];
+        $orderId = trim((string) $order->OrderID);
+
+        return new OrderProposal(
+            self::PLATFORM,
+            $orderId,
+            ProposalKind::Ordered,
+            self::day((string) $order->CreatedTime),
+            (string) ($order->Total['currencyID'] ?? 'EUR') ?: 'EUR',
+            $lines,
+            self::amount($order->ShippingServiceSelected->ShippingServiceCost ?? null),
+            self::amount($order->Total ?? null),
+            $seller === '' ? null : $seller,
+            null,
+            $shipped,
+            array_values(array_unique($tracking)),
+            self::SOURCE,
+            $orderId,
+        );
     }
 
     /**

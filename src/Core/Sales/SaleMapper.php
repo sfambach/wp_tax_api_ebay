@@ -2,21 +2,24 @@
 
 namespace TaxEbay\Core\Sales;
 
+use Taxmod\Core\Import\OrderProposal;
+use Taxmod\Core\Import\ProposalKind;
+use Taxmod\Core\Import\ProposalLine;
+
 /**
- * Turns one eBay order into a proposal in the format shared with tax_mail (`OrderProposal::toArray()` there,
- * D-942/D-943), kind «sold». The buyer's name and address are never taken — only the eBay user name (D-934).
+ * Turns one eBay order into the modeller's `OrderProposal` (D-952, D-953), kind «sold», source «ebay». The buyer's name and address are never taken — only the eBay user name (D-934).
  *
  * Money stays a decimal string; a line's unit price is its line cost divided by its quantity.
  */
 final class SaleMapper
 {
     public const PLATFORM = 'eBay';
+    public const SOURCE = 'ebay';
 
     /**
      * @param array<string, mixed> $order as SalesClient returned it
-     * @return array<string, mixed> the shared proposal shape; `mixed` because the lines nest
      */
-    public function map(array $order): array
+    public function map(array $order): OrderProposal
     {
         $pricing = (array) ($order['pricingSummary'] ?? []);
         $fulfillments = (array) ($order['_fulfillments'] ?? []);
@@ -34,20 +37,24 @@ final class SaleMapper
             $shipped = $shipped === null || ($date !== null && $date < $shipped) ? $date : $shipped;
         }
 
-        return [
-            'platform'      => self::PLATFORM,
-            'order_number'  => (string) ($order['orderId'] ?? ''),
-            'kind'          => 'sold',
-            'order_date'    => self::day($order['creationDate'] ?? null),
-            'currency'      => (string) ($pricing['total']['currency'] ?? 'EUR'),
-            'lines'         => array_map(self::line(...), array_values((array) ($order['lineItems'] ?? []))),
-            'shipping_cost' => self::amount($pricing['deliveryCost'] ?? null),
-            'total'         => self::amount($pricing['total'] ?? null),
-            'counterparty'  => isset($order['buyer']['username']) ? (string) $order['buyer']['username'] : null,
-            'fees'          => self::amount($order['totalMarketplaceFee'] ?? null),
-            'shipped_date'  => $shipped,
-            'tracking'      => array_values(array_unique($tracking)),
-        ];
+        $orderId = (string) ($order['orderId'] ?? '');
+
+        return new OrderProposal(
+            self::PLATFORM,
+            $orderId,
+            ProposalKind::Sold,
+            self::day($order['creationDate'] ?? null),
+            (string) ($pricing['total']['currency'] ?? 'EUR'),
+            array_map(self::line(...), array_values((array) ($order['lineItems'] ?? []))),
+            self::amount($pricing['deliveryCost'] ?? null),
+            self::amount($pricing['total'] ?? null),
+            isset($order['buyer']['username']) ? (string) $order['buyer']['username'] : null,
+            self::amount($order['totalMarketplaceFee'] ?? null),
+            $shipped,
+            array_values(array_unique($tracking)),
+            self::SOURCE,
+            $orderId,
+        );
     }
 
     /**
@@ -60,21 +67,18 @@ final class SaleMapper
         return in_array($order['cancelStatus']['cancelState'] ?? '', ['CANCELED', 'CANCELLED'], true);
     }
 
-    /**
-     * @param array<string, mixed> $item
-     * @return array{title: string, quantity: float, unit_price: ?string, article_number: ?string}
-     */
-    private static function line(array $item): array
+    /** @param array<string, mixed> $item */
+    private static function line(array $item): ProposalLine
     {
         $quantity = (int) ($item['quantity'] ?? 1) ?: 1;
         $cost = self::amount($item['lineItemCost'] ?? null);
 
-        return [
-            'title'          => (string) ($item['title'] ?? ''),
-            'quantity'       => (float) $quantity,
-            'unit_price'     => $cost === null ? null : self::divide($cost, $quantity),
-            'article_number' => isset($item['legacyItemId']) ? (string) $item['legacyItemId'] : null,
-        ];
+        return new ProposalLine(
+            (string) ($item['title'] ?? ''),
+            (float) $quantity,
+            $cost === null ? null : self::divide($cost, $quantity),
+            isset($item['legacyItemId']) ? (string) $item['legacyItemId'] : null,
+        );
     }
 
     private static function amount(mixed $money): ?string

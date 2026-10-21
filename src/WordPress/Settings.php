@@ -2,10 +2,11 @@
 
 namespace TaxEbay\WordPress;
 
-use RuntimeException;
+use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\OAuth\AppKeys;
-use TaxEbay\Core\Secret\TokenVault;
+use Taxmod\Core\Import\SecretBox;
+use Taxmod\WordPress\Import\Vault;
 
 /**
  * Where the module's configuration comes from: app keys from wp-config.php or, sealed, from an option; the connection
@@ -50,7 +51,7 @@ final class Settings
 
         try {
             $secret = self::vault()->open($stored['client_secret']);
-        } catch (RuntimeException) {
+        } catch (SecretDoesNotOpen) {
             return null;
         }
 
@@ -89,10 +90,10 @@ final class Settings
         ], false);
     }
 
-    /** The auth salt comes from wp-config.php, so the sealed token is useless without that file. */
-    public static function vault(): TokenVault
+    /** The modeller's vault (D-951, D-952); the context is the one this module sealed with before, so stored secrets still open. */
+    public static function vault(): SecretBox
     {
-        return new TokenVault(wp_salt('auth'));
+        return Vault::for('taxebay-token');
     }
 
     /** @return array{refresh: string, refresh_expires: int, username: string, connected_at: string}|null */

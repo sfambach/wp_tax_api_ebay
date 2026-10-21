@@ -2,7 +2,7 @@
 
 namespace TaxEbay\WordPress;
 
-use RuntimeException;
+use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\OAuth\AppKeys;
 use TaxEbay\Core\OAuth\IdentityClient;
@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.4';
+    public const VERSION    = '0.0.5';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -136,7 +136,7 @@ final class Plugin
                 count($result['rows']),
                 $missing
             ));
-        } catch (EbayApiException | RuntimeException $failure) {
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
             /* translators: %s: reason */
             $this->notice(false, sprintf(__('Reading purchases failed: %s', 'taxebay'), $failure->getMessage()));
         }

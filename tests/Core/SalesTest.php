@@ -38,7 +38,7 @@ final class SalesTest extends TestCase
         $order = json_decode(self::fixture(), true)['orders'][0];
         $order['_fulfillments'] = [['shipmentTrackingNumber' => '00340434', 'shippedDate' => '2026-10-13T09:00:00.000Z']];
 
-        $proposal = (new SaleMapper())->map($order);
+        $proposal = (new SaleMapper())->map($order)->toArray();
 
         self::assertSame([
             'platform'      => 'eBay',
@@ -53,6 +53,8 @@ final class SalesTest extends TestCase
             'fees'          => '0.00',
             'shipped_date'  => '2026-10-13',
             'tracking'      => ['00340434'],
+            'source'        => 'ebay',
+            'external_id'   => '12-34567-89012',
         ], $proposal);
         self::assertStringNotContainsString('Not To Be Stored', (string) json_encode($proposal));
     }
@@ -61,7 +63,7 @@ final class SalesTest extends TestCase
     {
         $proposal = (new SaleMapper())->map(['orderId' => 'x', 'lineItems' => [['title' => 't', 'quantity' => 3, 'lineItemCost' => ['value' => '10.00']]]]);
 
-        self::assertSame('3.33', $proposal['lines'][0]['unit_price']);
+        self::assertSame('3.33', $proposal->lines[0]->unitPrice);
     }
 
     public function testCancelledOrderIsRecognised(): void

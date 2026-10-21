@@ -43,7 +43,7 @@ final class PurchaseCheck
                 continue;
             }
 
-            $rows[] = ['proposal' => $mapper->map($order), 'known' => $gateway === null ? null : $this->known($gateway, $mapper->orderNumbers($order))];
+            $rows[] = ['proposal' => $mapper->map($order)->toArray(), 'known' => $gateway === null ? null : $this->known($gateway, $mapper->orderNumbers($order))];
         }
 
         usort($rows, static fn (array $a, array $b): int => strcmp((string) $b['proposal']['order_date'], (string) $a['proposal']['order_date']));
