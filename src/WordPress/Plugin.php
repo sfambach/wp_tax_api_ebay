@@ -2,11 +2,15 @@
 
 namespace TaxEbay\WordPress;
 
+use DateTimeImmutable;
+use SimpleXMLElement;
 use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\OAuth\AppKeys;
 use TaxEbay\Core\OAuth\IdentityClient;
 use TaxEbay\Core\OAuth\TokenClient;
+use TaxEbay\Core\Purchases\PurchaseMapper;
+use TaxEbay\Core\Purchases\PurchasesClient;
 
 /**
  * The boundary: menu, connect, the OAuth return, the connection test. It wires WordPress to the core and decides nothing.
@@ -15,7 +19,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.8';
+    public const VERSION    = '0.0.9';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -38,6 +42,7 @@ final class Plugin
         add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
         add_action('rest_api_init', AccountDeletionEndpoint::register(...));
         add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
+        add_action('admin_post_taxebay_export', $plugin->handleExport(...));
     }
 
     /**
@@ -162,6 +167,47 @@ final class Plugin
         }
 
         $this->back();
+    }
+
+    /**
+     * His purchases of the last 90 days as eBay delivers them, as a JSON file — to compare them with what the model
+     * holds from the mails. Reads only; nothing reaches the inbox.
+     */
+    public function handleExport(): void
+    {
+        $keys = $this->keysOrBack('taxebay_export');
+        $connection = Settings::connection();
+
+        if ($connection === null) {
+            $this->notice(false, __('Not connected yet.', 'taxebay'));
+            $this->back();
+        }
+
+        try {
+            $http = WpHttpTransport::budgeted();
+            $token = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
+            $now = new DateTimeImmutable('now');
+            $orders = (new PurchasesClient($keys->environment, $http))
+                ->ordersCreatedBetween($token, $now->modify('-' . (PurchasesClient::MAX_DAYS_BACK - 1) . ' days'), $now);
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            /* translators: %s: reason */
+            $this->notice(false, sprintf(__('Export failed: %s', 'taxebay'), $failure->getMessage()));
+            $this->back();
+        }
+
+        $mapper = new PurchaseMapper();
+        $rows = array_map(static fn (SimpleXMLElement $order): array => [
+            ...$mapper->map($order)->toArray(),
+            'order_numbers' => $mapper->orderNumbers($order),
+            'order_status'  => (string) $order->OrderStatus,
+            'paid_at'       => (string) ($order->PaidTime ?? ''),
+        ], $orders);
+
+        nocache_headers();
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="ebay-purchases-' . gmdate('Y-m-d') . '.json"');
+        echo wp_json_encode(['exported_at' => $now->format(DATE_ATOM), 'orders' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     /** The fallback page's own form; the tab saves through the modeller. */

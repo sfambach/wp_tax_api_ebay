@@ -110,6 +110,12 @@ final class SettingsScreen
         }
 
         $html .= '</select></p>';
+
+        if (Settings::connection() !== null) {
+            $html .= '<p>' . $this->action('taxebay_export', __('Download purchases as JSON', 'taxebay'), false)
+                . ' <span class="description">' . esc_html__('The last 90 days exactly as eBay delivers them, to compare with the model. Writes nothing.', 'taxebay') . '</span></p>';
+        }
+
         $used = (new OptionCallLedger())->counts(OptionCallLedger::today());
         $parts = [];
 
