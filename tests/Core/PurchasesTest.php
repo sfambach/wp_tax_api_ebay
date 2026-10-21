@@ -74,6 +74,20 @@ final class PurchasesTest extends TestCase
         self::assertFalse($mapper->isCancelled($order));
     }
 
+    /** Measured 2026-10-21: three listings at 66.00 listed shipping, combined by the seller; he paid 132.00. */
+    public function testCombinedShippingIsTheTotalLessTheItems(): void
+    {
+        $item = static fn (string $price): string => '<Transaction><QuantityPurchased>1</QuantityPurchased><TransactionPrice currencyID="EUR">' . $price . '</TransactionPrice><Item><ItemID>1</ItemID><Title>Board</Title></Item></Transaction>';
+        $order = new \SimpleXMLElement('<Order><OrderID>05-15105-57121</OrderID><CreatedTime>2026-08-29T13:10:00.000Z</CreatedTime>'
+            . '<ShippingServiceSelected><ShippingServiceCost currencyID="EUR">66.00</ShippingServiceCost></ShippingServiceSelected>'
+            . '<Total currencyID="EUR">132.00</Total><TransactionArray>' . $item('50.00') . $item('30.00') . $item('30.00') . '</TransactionArray></Order>');
+
+        $proposal = (new PurchaseMapper())->map($order);
+
+        self::assertSame('22.00', $proposal->shippingCost);
+        self::assertSame('132.00', $proposal->total);
+    }
+
     public function testReconciliationMatchesAnyNumberIgnoringCaseAndSpaces(): void
     {
         $reconciliation = new Reconciliation([' 05-12345-67890 ', 'AB-1']);

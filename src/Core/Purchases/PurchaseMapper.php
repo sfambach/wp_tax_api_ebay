@@ -56,7 +56,7 @@ final class PurchaseMapper
             self::day((string) $order->CreatedTime),
             (string) ($order->Total['currencyID'] ?? 'EUR') ?: 'EUR',
             $lines,
-            self::amount($order->ShippingServiceSelected->ShippingServiceCost ?? null),
+            self::shipping($order, $lines),
             self::amount($order->Total ?? null),
             $seller === '' ? null : $seller,
             null,
@@ -83,6 +83,35 @@ final class PurchaseMapper
     public function isCancelled(SimpleXMLElement $order): bool
     {
         return in_array((string) $order->OrderStatus, ['Cancelled', 'CancelPending', 'Inactive'], true);
+    }
+
+    /**
+     * What he paid for shipping: the total less the items. The listed shipping cost is per listing and stays the same
+     * when the seller combines the shipping of several items into one parcel.
+     *
+     * @param list<ProposalLine> $lines
+     */
+    private static function shipping(SimpleXMLElement $order, array $lines): ?string
+    {
+        $listed = self::amount($order->ShippingServiceSelected->ShippingServiceCost ?? null);
+        $total = self::amount($order->Total ?? null);
+        $cents = 0;
+
+        foreach ($lines as $line) {
+            if ($line->unitPrice === null) {
+                return $listed;
+            }
+
+            $cents += (int) round((float) $line->unitPrice * 100) * (int) ($line->quantity ?? 1);
+        }
+
+        if ($total === null || $lines === []) {
+            return $listed;
+        }
+
+        $rest = (int) round((float) $total * 100) - $cents;
+
+        return $rest < 0 ? $listed : number_format($rest / 100, 2, '.', '');
     }
 
     private static function amount(?SimpleXMLElement $money): ?string
