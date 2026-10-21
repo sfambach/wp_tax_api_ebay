@@ -83,7 +83,19 @@ final class SettingsScreen
             $html .= '<option value="' . esc_attr($value) . '"' . selected(Settings::schedule(), $value, false) . '>' . esc_html($label) . '</option>';
         }
 
-        return $html . '</select></p>';
+        $html .= '</select></p>';
+        $used = (new OptionCallLedger())->counts(OptionCallLedger::today());
+        $parts = [];
+
+        foreach (\TaxEbay\Core\Api\CallBudget::CAPS as $family => $cap) {
+            $parts[] = sprintf('%s %d/%d', $family, $used[$family] ?? 0, $cap);
+        }
+
+        return $html . '<p class="description">' . esc_html(sprintf(
+            /* translators: %s: calls per API today, e.g. "trading 3/500" */
+            __('eBay calls today (UTC), against the module\'s own daily cap: %s', 'taxebay'),
+            implode(' · ', $parts)
+        )) . '</p>';
     }
 
     /** @param list<array{ok: bool, text: string}> $notices */

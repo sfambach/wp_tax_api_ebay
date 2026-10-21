@@ -16,6 +16,7 @@ use TaxEbay\Core\Api\HttpTransport;
 final class SalesClient
 {
     private const PAGE_SIZE = 200;
+    private const MAX_PAGES = 10;
 
     public function __construct(
         private readonly Environment $environment,
@@ -34,8 +35,9 @@ final class SalesClient
             'limit'  => self::PAGE_SIZE,
         ], '', '&', PHP_QUERY_RFC3986);
         $orders = [];
+        $pages = 0;
 
-        while ($url !== '') {
+        while ($url !== '' && $pages++ < self::MAX_PAGES) {
             $page = $this->get($accessToken, $url, 'Reading sales');
 
             foreach ((array) ($page['orders'] ?? []) as $order) {

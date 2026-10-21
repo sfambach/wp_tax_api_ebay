@@ -15,7 +15,7 @@ use TaxEbay\Core\OAuth\TokenClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.6';
+    public const VERSION    = '0.0.7';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -87,6 +87,80 @@ final class Plugin
     private static function hasConfigTabs(): bool
     {
         return defined('Taxmod\WordPress\Admin\SettingsScreen::TABS_FILTER');
+    }
+
+    public function handleConnect(): void
+    {
+        $keys = $this->keysOrBack('taxebay_connect');
+        $state = wp_generate_password(32, false);
+        set_transient(self::STATE . get_current_user_id(), $state, 15 * MINUTE_IN_SECONDS);
+
+        // eBay's own host, which wp_safe_redirect would refuse.
+        wp_redirect((new TokenClient($keys, WpHttpTransport::budgeted()))->consentUrl($state));
+        exit;
+    }
+
+    /** eBay sends him back here with `code` and `state`; the state stands in for the nonce (CD-5). */
+    public function handleReturn(): void
+    {
+        if (! current_user_can(self::CAPABILITY)) {
+            wp_die(esc_html__('You may not change the eBay connection.', 'taxebay'), 403);
+        }
+
+        $key = self::STATE . get_current_user_id();
+        $expected = (string) get_transient($key);
+        delete_transient($key);
+        $state = isset($_GET['state']) ? sanitize_text_field(wp_unslash($_GET['state'])) : '';
+
+        if ($expected === '' || ! hash_equals($expected, $state)) {
+            wp_die(esc_html__('This answer from eBay does not belong to a connection you started. Please connect again.', 'taxebay'), 403);
+        }
+
+        $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
+        $keys = Settings::appKeys();
+
+        if ($code === '' || $keys === null) {
+            $this->notice(false, __('eBay sent no consent code — the connection was declined or cancelled.', 'taxebay'));
+            $this->back();
+        }
+
+        try {
+            $http = WpHttpTransport::budgeted();
+            $tokens = (new TokenClient($keys, $http))->exchangeCode($code, time());
+            $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
+            Settings::saveConnection(Settings::vault()->seal((string) $tokens->refreshToken), (int) $tokens->refreshExpiresAt, $username);
+            /* translators: %s: eBay user name */
+            $this->notice(true, sprintf(__('Connected as %s.', 'taxebay'), $username));
+        } catch (EbayApiException $failure) {
+            /* translators: %s: eBay's answer */
+            $this->notice(false, sprintf(__('Not connected: %s', 'taxebay'), $failure->getMessage()));
+        }
+
+        $this->back();
+    }
+
+    public function handleCheck(): void
+    {
+        $keys = $this->keysOrBack('taxebay_check');
+        $connection = Settings::connection();
+
+        if ($connection === null) {
+            $this->notice(false, __('Not connected yet.', 'taxebay'));
+            $this->back();
+        }
+
+        try {
+            $http = WpHttpTransport::budgeted();
+            $tokens = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time());
+            $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
+            /* translators: %s: eBay user name */
+            $this->notice(true, sprintf(__('Connection works: eBay knows this site as %s.', 'taxebay'), $username));
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            /* translators: %s: reason */
+            $this->notice(false, sprintf(__('Connection test failed: %s', 'taxebay'), $failure->getMessage()));
+        }
+
+        $this->back();
     }
 
     /** The fallback page's own form; the tab saves through the modeller. */

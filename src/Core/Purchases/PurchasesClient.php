@@ -24,6 +24,9 @@ final class PurchasesClient
     private const COMPATIBILITY_LEVEL = '1193';
     private const PAGE_SIZE = 100;
 
+    /** 2,000 orders per run is far more than he buys in 90 days; a page loop that never ends stops here. */
+    private const MAX_PAGES = 20;
+
     public function __construct(
         private readonly Environment $environment,
         private readonly HttpTransport $http,
@@ -44,7 +47,7 @@ final class PurchasesClient
             }
 
             $page++;
-        } while ((string) $answer->HasMoreOrders === 'true');
+        } while ((string) $answer->HasMoreOrders === 'true' && $page <= self::MAX_PAGES);
 
         return $orders;
     }
