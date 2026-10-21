@@ -7,6 +7,7 @@ use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
+use TaxEbay\Core\Purchases\PurchaseFeed;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
 use TaxEbay\Core\Purchases\Reconciliation;
@@ -80,5 +81,28 @@ final class PurchasesTest extends TestCase
         self::assertTrue($reconciliation->isKnown(['x', '05-12345-67890']));
         self::assertTrue($reconciliation->isKnown(['ab-1']));
         self::assertFalse($reconciliation->isKnown(['05-99999-00000']));
+    }
+
+    public function testFeedHandsStableIdsAndTheRunStartAsCursor(): void
+    {
+        $http = new ScriptedTransport([new HttpResponse(200, self::page1()), new HttpResponse(200, self::EMPTY_LAST_PAGE)]);
+        $now = new DateTimeImmutable('2026-10-21T12:00:00+00:00');
+
+        $batch = (new PurchaseFeed(new PurchasesClient(Environment::Production, $http)))->run('t', '2026-10-20T12:00:00+00:00', $now);
+
+        self::assertSame('2026-10-21T12:00:00+00:00', $batch->cursor);
+        self::assertCount(1, $batch->proposals);
+        self::assertSame('05-12345-67890', $batch->proposals[0]->proposal->externalId);
+        self::assertSame(['seller' => 'chip-haendler', 'items' => 1, 'order_status' => 'Completed'], $batch->proposals[0]->evidence);
+        self::assertStringContainsString('<CreateTimeFrom>2026-10-19T12:00:00.000Z</CreateTimeFrom>', $http->sent[0]->body);
+    }
+
+    public function testFirstRunReachesBackAsFarAsEbayAnswers(): void
+    {
+        $http = new ScriptedTransport([new HttpResponse(200, self::EMPTY_LAST_PAGE)]);
+
+        (new PurchaseFeed(new PurchasesClient(Environment::Production, $http)))->run('t', null, new DateTimeImmutable('2026-10-21T12:00:00Z'));
+
+        self::assertStringContainsString('<CreateTimeFrom>2026-07-24T12:00:00.000Z</CreateTimeFrom>', $http->sent[0]->body);
     }
 }

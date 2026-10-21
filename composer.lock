@@ -1615,12 +1615,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/sfambach/wp-taxonomy-modeler.git",
-                "reference": "7bd5eb23b6e85829614d903461842dc0a7d7e13b"
+                "reference": "e615de9bc1c6659ddee0c3a3110b85eabd6ae079"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/7bd5eb23b6e85829614d903461842dc0a7d7e13b",
-                "reference": "7bd5eb23b6e85829614d903461842dc0a7d7e13b",
+                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/e615de9bc1c6659ddee0c3a3110b85eabd6ae079",
+                "reference": "e615de9bc1c6659ddee0c3a3110b85eabd6ae079",
                 "shasum": ""
             },
             "require": {
@@ -1655,7 +1655,7 @@
                 "source": "https://github.com/sfambach/wp-taxonomy-modeler/tree/claude/project-thread-0d3ttf",
                 "issues": "https://github.com/sfambach/wp-taxonomy-modeler/issues"
             },
-            "time": "2026-10-21T11:48:00+00:00"
+            "time": "2026-10-21T12:56:34+00:00"
         },
         {
             "name": "theseer/tokenizer",

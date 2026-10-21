@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       Taxmod API eBay
  * Description:       Connects the owner's eBay account and offers eBay sales and purchases as proposals for the Taxonomy Modeller; only picked items are written.
- * Version:           0.0.5
+ * Version:           0.0.6
  * Requires at least: 6.9
  * Requires PHP:      8.2
  * Author:            Stefan Fambach (SteFam)
@@ -35,12 +35,12 @@ if (! is_readable($taxebayAutoloader)) {
 
 require_once $taxebayAutoloader;
 
-// The vault and the proposal format live in the modeller since 0.1.31 (D-952); without them this module does nothing.
+// Vault, proposal format and the inbox's source contract live in the modeller since 0.1.35 (D-952, D-953).
 add_action('plugins_loaded', static function (): void {
-    if (! class_exists(Taxmod\WordPress\Import\Vault::class) || Taxmod\WordPress\Import\Vault::API < 1) {
+    if (! interface_exists(Taxmod\Core\Import\FetchingSource::class) || ! class_exists(Taxmod\WordPress\Import\Vault::class) || Taxmod\WordPress\Import\Vault::API < 1) {
         add_action('admin_notices', static function (): void {
             echo '<div class="notice notice-error"><p><strong>Taxmod API eBay:</strong> '
-                . esc_html__('needs the Taxonomy Modeller 0.1.31 or later — the module stays off until then.', 'taxebay')
+                . esc_html__('needs the Taxonomy Modeller 0.1.35 or later — the module stays off until then.', 'taxebay')
                 . '</p></div>';
         });
 
