@@ -20,7 +20,7 @@ final class Settings
     public const SCHEDULE = 'taxmod_ebay_schedule';
 
     /** Seconds between two automatic fetches, by the label he picks; 0 means the inbox button only (D-943 E7). */
-    public const INTERVALS = ['' => 0, 'hourly' => 3600, 'twicedaily' => 43200, 'daily' => 86400];
+    public const INTERVALS = ['' => 0, 'hourly' => 3600, 'fourtimesdaily' => 21600, 'twicedaily' => 43200, 'daily' => 86400];
 
     /** Constants in wp-config.php win; otherwise the keys entered on the settings page (his word 2026-10-20: «ja verschlüsselt einbauen»). */
     public static function appKeys(): ?AppKeys
@@ -96,9 +96,9 @@ final class Settings
 
     public static function schedule(): string
     {
-        $stored = (string) get_option(self::SCHEDULE, 'daily');
+        $stored = (string) get_option(self::SCHEDULE, 'twicedaily');
 
-        return array_key_exists($stored, self::INTERVALS) ? $stored : 'daily';
+        return array_key_exists($stored, self::INTERVALS) ? $stored : 'twicedaily';
     }
 
     public static function fetchInterval(): int
@@ -108,7 +108,7 @@ final class Settings
 
     public static function saveSchedule(string $schedule): void
     {
-        update_option(self::SCHEDULE, array_key_exists($schedule, self::INTERVALS) ? $schedule : 'daily', false);
+        update_option(self::SCHEDULE, array_key_exists($schedule, self::INTERVALS) ? $schedule : 'twicedaily', false);
     }
 
     /** The modeller's vault (D-951, D-952); the context is the one this module sealed with before, so stored secrets still open. */

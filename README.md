@@ -32,7 +32,7 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
    ```
 
 4. On the plugin page click «Connect to eBay», sign in and agree. Then «Test connection».
-5. Purchases arrive in *Taxonomy Modeller → Inbox*, automatically (default daily) or by its button.
+5. Purchases arrive in *Taxonomy Modeller → Inbox*, automatically (default twice a day; 2–4 times a day recommended) or by its button.
 
 The refresh token is stored sealed (libsodium) with a key derived from the auth salt in `wp-config.php`; changing that
 salt means connecting again. Production keysets also need the *Marketplace account deletion* notification settled in

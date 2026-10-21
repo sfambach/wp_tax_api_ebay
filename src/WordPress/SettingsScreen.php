@@ -103,6 +103,7 @@ final class SettingsScreen
         foreach ([
             ''           => __('never (Inbox button only)', 'taxebay'),
             'hourly'     => __('every hour', 'taxebay'),
+            'fourtimesdaily' => __('four times a day', 'taxebay'),
             'twicedaily' => __('twice a day', 'taxebay'),
             'daily'      => __('once a day', 'taxebay'),
         ] as $value => $label) {
