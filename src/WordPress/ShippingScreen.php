@@ -83,7 +83,6 @@ final class ShippingScreen
             $carriers .= '<option value="' . esc_attr($code) . '">' . esc_html($label) . '</option>';
         }
 
-        $insert = wp_nonce_url(admin_url('admin-post.php?action=' . self::INSERT . '&orders=' . rawurlencode(implode(',', $ids))), self::INSERT);
         $heading = count($parcel) > 1
             /* translators: %d: number of sales */
             ? sprintf(__('%d sales, one parcel', 'taxebay'), count($parcel))
@@ -95,13 +94,17 @@ final class ShippingScreen
             . '<div style="display:flex;gap:24px;flex-wrap:wrap"><ul style="flex:1 1 20em">' . $items . '</ul>'
             . '<address style="flex:0 1 16em">' . implode('<br>', array_map('esc_html', $first->address)) . '</address></div>'
             . '<p>' . esc_html(implode(' | ', $lines)) . '</p>'
+            . '<form method="get" action="' . esc_url(admin_url('admin-post.php')) . '" target="_blank" style="margin-bottom:8px">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::INSERT) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
+            . wp_nonce_field(self::INSERT, '_wpnonce', false, false)
+            . '<input type="url" name="github" class="regular-text" style="width:24em" placeholder="' . esc_attr__('GitHub project (optional)', 'taxebay') . '"> '
+            . get_submit_button(__('Print insert', 'taxebay'), 'secondary', 'print', false) . '</form>'
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(' . esc_attr((string) wp_json_encode(
                 /* translators: %s: eBay order numbers */
                 sprintf(__('Report %s as shipped to eBay? The buyer is notified.', 'taxebay'), implode(', ', $ids))
             )) . ')">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
             . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
-            . '<a class="button" target="_blank" rel="noopener" href="' . esc_url($insert) . '">' . esc_html__('Print insert', 'taxebay') . '</a> '
             . (self::LABEL_PRINT
                 ? '<label class="button">' . esc_html__('Label PDF/image → 62 mm', 'taxebay')
                 . '<input type="file" accept="application/pdf,image/*" hidden data-taxebay-label="' . esc_attr(self::reference($ids, $seller)) . '"></label> '
@@ -122,7 +125,7 @@ final class ShippingScreen
      *
      * @param non-empty-list<OpenShipment> $parcel
      */
-    public function insert(array $parcel, string $format, string $seller): string
+    public function insert(array $parcel, string $format, string $seller, string $project = ''): string
     {
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
         $site = home_url('/');
@@ -145,13 +148,15 @@ final class ShippingScreen
             // His signature in handwriting (his wish, 2026-10-23); without the web font the browser's own cursive.
             . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=block">'
             . '<style>' . $page . 'html,body{margin:0}.sheet{box-sizing:border-box;overflow:hidden;font-family:sans-serif;line-height:1.3}'
-            . 'h1{font-size:1.2em;margin:0 0 .4em}ul{padding-left:1.2em;margin:.4em 0}p{margin:.4em 0}img{float:right;margin:0 0 .3em .3em}'
+            . 'h1{font-size:1.2em;margin:0 0 .4em}ul{padding-left:1.2em;margin:.4em 0}p{margin:.4em 0}img{float:right;margin:0 0 .3em .3em}.project{clear:both;overflow-wrap:anywhere}'
             . '.sign{font-family:"Dancing Script",cursive;font-size:1.6em;line-height:1.1}</style>'
             // One sheet, always: the text shrinks until it fits (long item titles, several items in one parcel).
             . '<script>function fit(){var s=document.querySelector(".sheet"),size=parseFloat(getComputedStyle(s).fontSize);'
             . 'while(s.scrollHeight>s.clientHeight&&size>5){size-=.5;s.style.fontSize=size+"px";}print();}</script></head>'
             . '<body onload="document.fonts.ready.then(fit)"><div class="sheet"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
             . '<ul>' . $items . '</ul><p>' . esc_html($words['docs']) . '<br><strong>' . esc_html($site) . '</strong></p>'
+            . ($project === '' ? '' : '<p class="project"><img src="' . esc_attr((new QRCode(new QROptions(['outputType' => 'svg', 'outputBase64' => true])))->render($project)) . '" alt="">'
+                . esc_html($words['project']) . '<br><strong>' . esc_html($project) . '</strong></p>')
             . '<p><small>' . esc_html($words['private']) . '<br>' . esc_html(self::reference($ids, $seller, $words)) . '</small></p>'
             . '<p class="sign">' . esc_html($words['enjoy']) . '<br>SFA</p></div></body></html>';
     }

@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.38';
+    public const VERSION    = '0.0.39';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -328,7 +328,8 @@ final class Plugin
 
         nocache_headers();
         header('Content-Type: text/html; charset=utf-8');
-        print (new ShippingScreen())->insert($sales, Settings::insertFormat(), self::seller());
+        $project = isset($_GET['github']) ? esc_url_raw(wp_unslash($_GET['github']), ['https']) : '';
+        print (new ShippingScreen())->insert($sales, Settings::insertFormat(), self::seller(), $project);
         exit;
     }
 
