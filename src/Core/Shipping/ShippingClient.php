@@ -38,7 +38,9 @@ final class ShippingClient
         $open = $this->read($accessToken, 'orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}');
 
         if ($labelledSince !== null) {
-            $open = [...$open, ...$this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED}')];
+            // eBay accepts only {NOT_STARTED|IN_PROGRESS} or {FULFILLED|IN_PROGRESS}; IN_PROGRESS came with the first read.
+            $recent = $this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED|IN_PROGRESS}');
+            $open = [...$open, ...array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled)];
         }
 
         usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));

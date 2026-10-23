@@ -79,13 +79,13 @@ final class ShippingTest extends TestCase
     {
         $labelled = self::order('L', '2026-10-22');
         $labelled['orderFulfillmentStatus'] = 'FULFILLED';
-        $http = new ScriptedTransport([new HttpResponse(200, '{"orders":[]}'), new HttpResponse(200, (string) json_encode(['orders' => [$labelled]]))]);
+        $http = new ScriptedTransport([new HttpResponse(200, '{"orders":[]}'), new HttpResponse(200, (string) json_encode(['orders' => [$labelled, self::order('P', '2026-10-22')]]))]);
 
         $open = (new ShippingClient(Environment::Production, $http))->open('token', '2026-10-20T00:00:00.000Z');
 
         self::assertCount(1, $open);
         self::assertTrue($open[0]->labelled);
-        self::assertStringContainsString('orderfulfillmentstatus%3A%7BFULFILLED%7D', $http->sent[1]->url);
+        self::assertStringContainsString('orderfulfillmentstatus%3A%7BFULFILLED%7CIN_PROGRESS%7D', $http->sent[1]->url);
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void
