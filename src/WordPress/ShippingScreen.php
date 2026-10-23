@@ -73,7 +73,10 @@ final class ShippingScreen
             . '<div style="display:flex;gap:24px;flex-wrap:wrap"><ul style="flex:1 1 20em">' . $items . '</ul>'
             . '<address style="flex:0 1 16em">' . implode('<br>', array_map('esc_html', $sale->address)) . '</address></div>'
             . '<p>' . esc_html(trim($sale->service . ' · ' . ($sale->total === null ? '' : $sale->total . ' ' . $sale->currency), ' ·')) . '</p>'
-            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(' . esc_attr((string) wp_json_encode(
+                /* translators: %s: eBay order number */
+                sprintf(__('Report %s as shipped to eBay? The buyer is notified.', 'taxebay'), $sale->orderId)
+            )) . ')">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="order" value="' . esc_attr($sale->orderId) . '">'
             . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
             . '<a class="button" target="_blank" rel="noopener" href="' . esc_url($insert) . '">' . esc_html__('Print insert', 'taxebay') . '</a> '
