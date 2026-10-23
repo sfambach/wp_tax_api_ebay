@@ -11,6 +11,8 @@ use TaxEbay\Core\OAuth\IdentityClient;
 use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
+use TaxEbay\Core\Shipping\OpenShipment;
+use TaxEbay\Core\Shipping\ShippingClient;
 
 /**
  * The boundary: menu, connect, the OAuth return, the connection test. It wires WordPress to the core and decides nothing.
@@ -19,7 +21,7 @@ use TaxEbay\Core\Purchases\PurchasesClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.14';
+    public const VERSION    = '0.0.15';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -43,6 +45,9 @@ final class Plugin
         add_action('rest_api_init', AccountDeletionEndpoint::register(...));
         add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
         add_action('admin_post_taxebay_export', $plugin->handleExport(...));
+        add_action('admin_menu', $plugin->registerShippingPage(...), 21);
+        add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
+        add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
     }
 
     /**
@@ -210,6 +215,93 @@ final class Plugin
         header('Content-Disposition: attachment; filename="ebay-purchases-' . gmdate('Y-m-d') . '.json"');
         echo wp_json_encode(['exported_at' => $now->format(DATE_ATOM), 'orders' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
+    }
+
+    /** «eBay shipping» under the modeller's menu (D-976). */
+    public function registerShippingPage(): void
+    {
+        $parent = isset($GLOBALS['admin_page_hooks']['taxmod']) ? 'taxmod' : 'tools.php';
+
+        add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
+            try {
+                $open = self::shippingClient()->open(self::accessToken());
+            } catch (EbayApiException | SecretDoesNotOpen $failure) {
+                $open = $failure->getMessage();
+            }
+
+            print (new ShippingScreen())->page($open, $this->takeNotices());
+        });
+    }
+
+    public function handleShip(): void
+    {
+        $this->guard(ShippingScreen::SHIP);
+        $order = isset($_POST['order']) ? sanitize_text_field(wp_unslash($_POST['order'])) : '';
+        $carrier = isset($_POST['carrier']) ? sanitize_key(wp_unslash($_POST['carrier'])) : '';
+        $tracking = isset($_POST['tracking']) ? preg_replace('/[^A-Za-z0-9]/', '', sanitize_text_field(wp_unslash($_POST['tracking']))) : '';
+        $carrier = strtoupper($carrier);
+
+        try {
+            $sale = self::openSale($order);
+
+            if ($tracking === '' || $sale === null) {
+                throw new EbayApiException(__('Order not open any more, or no tracking number.', 'taxebay'));
+            }
+
+            self::shippingClient()->markShipped(self::accessToken(), $sale->orderId, $sale->items, $carrier, (string) $tracking, gmdate('Y-m-d\TH:i:s.000\Z'));
+            /* translators: %s: eBay order number */
+            $this->notice(true, sprintf(__('%s reported as shipped.', 'taxebay'), $sale->orderId));
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            $this->notice(false, $failure->getMessage());
+        }
+
+        wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        exit;
+    }
+
+    public function handleInsert(): void
+    {
+        $this->guard(ShippingScreen::INSERT);
+        $order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : '';
+
+        try {
+            $sale = self::openSale($order);
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            wp_die(esc_html($failure->getMessage()));
+        }
+
+        if ($sale === null) {
+            wp_die(esc_html__('Order not open any more.', 'taxebay'));
+        }
+
+        nocache_headers();
+        header('Content-Type: text/html; charset=utf-8');
+        print (new ShippingScreen())->insert($sale);
+        exit;
+    }
+
+    private static function openSale(string $orderId): ?OpenShipment
+    {
+        foreach (self::shippingClient()->open(self::accessToken()) as $sale) {
+            if ($sale->orderId === $orderId) {
+                return $sale;
+            }
+        }
+
+        return null;
+    }
+
+    private static function shippingClient(): ShippingClient
+    {
+        return new ShippingClient((Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay')))->environment, WpHttpTransport::budgeted());
+    }
+
+    private static function accessToken(): string
+    {
+        $keys = Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay'));
+        $connection = Settings::connection() ?? throw new EbayApiException(__('Not connected to eBay yet.', 'taxebay'));
+
+        return (new TokenClient($keys, WpHttpTransport::budgeted()))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
     }
 
     /** The fallback page's own form; the tab saves through the modeller. */

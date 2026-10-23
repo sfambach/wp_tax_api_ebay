@@ -33,6 +33,9 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 
 4. On the plugin page click «Connect to eBay», sign in and agree. Then «Test connection».
 5. Purchases arrive in *Taxonomy Modeller → Inbox*, automatically (default twice a day; 2–4 times a day recommended) or by its button.
+6. Sales not shipped yet are listed on *Taxonomy Modeller → eBay shipping* (D-976): print the insert for the parcel,
+   enter carrier and tracking number, «Mark shipped» reports it to eBay. The buyer's address is read live and never
+   stored. From 0.0.15 the module asks for `sell.fulfillment` (write); an older consent needs «Connect again».
 
 The refresh token is stored sealed (libsodium) with a key derived from the auth salt in `wp-config.php`; changing that
 salt means connecting again. Production keysets also need the *Marketplace account deletion* notification settled in

@@ -27,7 +27,7 @@ final class TokenClientTest extends TestCase
         self::assertSame('Stefan-RuName', $query['redirect_uri']);
         self::assertSame('code', $query['response_type']);
         self::assertSame('abc', $query['state']);
-        self::assertStringContainsString('sell.fulfillment.readonly', (string) $query['scope']);
+        self::assertStringContainsString('sell.fulfillment ', (string) $query['scope']);
     }
 
     public function testSandboxUsesSandboxHosts(): void

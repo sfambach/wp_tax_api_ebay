@@ -1,0 +1,94 @@
+<?php declare(strict_types=1);
+
+namespace TaxEbay\Core\Shipping;
+
+use TaxEbay\Core\Api\EbayApiException;
+use TaxEbay\Core\Api\Environment;
+use TaxEbay\Core\Api\HttpRequest;
+use TaxEbay\Core\Api\HttpTransport;
+
+/**
+ * The sales he has not shipped yet, and the call that tells eBay a parcel left (Sell Fulfillment API, D-976).
+ *
+ * ⚠️ Field names and carrier codes follow eBay's documentation; not measured against a live sale yet.
+ */
+final class ShippingClient
+{
+    private const PAGE_SIZE = 50;
+    private const MAX_PAGES = 4;
+
+    /** eBay's carrier codes for the services he uses in Germany. */
+    public const CARRIERS = ['DHL' => 'DHL', 'DEUTSCHE_POST' => 'Deutsche Post', 'HERMES' => 'Hermes', 'DPD' => 'DPD', 'GLS' => 'GLS', 'UPS' => 'UPS'];
+
+    public function __construct(
+        private readonly Environment $environment,
+        private readonly HttpTransport $http,
+    ) {
+    }
+
+    /** @return list<OpenShipment> oldest first */
+    public function open(string $accessToken): array
+    {
+        $url = $this->environment->apiHost() . '/sell/fulfillment/v1/order?' . http_build_query([
+            'filter' => 'orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}',
+            'limit'  => self::PAGE_SIZE,
+        ], '', '&', PHP_QUERY_RFC3986);
+        $open = [];
+        $pages = 0;
+
+        while ($url !== '' && $pages++ < self::MAX_PAGES) {
+            $response = $this->http->send(new HttpRequest('GET', $url, self::headers($accessToken)));
+
+            if ($response->status !== 200) {
+                throw EbayApiException::fromResponse('Reading open sales', $response);
+            }
+
+            $page = $response->json();
+
+            foreach ((array) ($page['orders'] ?? []) as $order) {
+                if (($order['cancelStatus']['cancelState'] ?? 'NONE_REQUESTED') === 'CANCELED') {
+                    continue;
+                }
+
+                $open[] = OpenShipment::fromOrder($order);
+            }
+
+            $url = (string) ($page['next'] ?? '');
+        }
+
+        usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
+
+        return $open;
+    }
+
+    /** @param list<array{line_item_id: string, quantity: int}> $items */
+    public function markShipped(string $accessToken, string $orderId, array $items, string $carrier, string $trackingNumber, string $shippedAt): void
+    {
+        if (! isset(self::CARRIERS[$carrier])) {
+            throw new EbayApiException('Unknown carrier ' . $carrier);
+        }
+
+        $body = (string) json_encode([
+            'lineItems'           => array_map(static fn (array $item): array => ['lineItemId' => $item['line_item_id'], 'quantity' => $item['quantity']], $items),
+            'shippedDate'         => $shippedAt,
+            'shippingCarrierCode' => $carrier,
+            'trackingNumber'      => $trackingNumber,
+        ]);
+        $response = $this->http->send(new HttpRequest(
+            'POST',
+            $this->environment->apiHost() . '/sell/fulfillment/v1/order/' . rawurlencode($orderId) . '/shipping_fulfillment',
+            self::headers($accessToken) + ['Content-Type' => 'application/json'],
+            $body
+        ));
+
+        if ($response->status !== 201 && $response->status !== 200) {
+            throw EbayApiException::fromResponse('Reporting the shipment of ' . $orderId, $response);
+        }
+    }
+
+    /** @return array<string, string> */
+    private static function headers(string $accessToken): array
+    {
+        return ['Authorization' => 'Bearer ' . $accessToken, 'Accept' => 'application/json'];
+    }
+}

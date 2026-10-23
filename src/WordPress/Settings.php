@@ -141,7 +141,16 @@ final class Settings
             'refresh_expires' => $refreshExpires,
             'username'        => $username,
             'connected_at'    => current_time('mysql'),
+            'scopes'          => \TaxEbay\Core\OAuth\Scopes::asString(),
         ], false);
+    }
+
+    /** A consent given before the module asked for more rights must be renewed with «Connect again». */
+    public static function needsReconnect(): bool
+    {
+        $stored = get_option(self::CONNECTION, null);
+
+        return is_array($stored) && ($stored['scopes'] ?? '') !== \TaxEbay\Core\OAuth\Scopes::asString();
     }
 
     public static function forget(): void
