@@ -19,6 +19,8 @@ use Taxmod\Core\Import\FetchingSource;
  */
 final class EbaySource implements FetchingSource
 {
+    private const SALES_STARTED = 'taxmod_ebay_sales_started';
+
     public function key(): string
     {
         return 'ebay';
@@ -44,7 +46,10 @@ final class EbaySource implements FetchingSource
 
         $now = new DateTimeImmutable('now');
         $purchases = (new PurchaseFeed(new PurchasesClient($keys->environment, $http)))->run($token, $cursor, $now);
-        $sales = (new SaleFeed(new SalesClient($keys->environment, $http)))->run($token, $cursor, $now);
+        // The first run after sales came in (0.0.17) reaches back the full 90 days, not only to the purchases' cursor.
+        $salesFrom = get_option(self::SALES_STARTED, '') === '' ? null : $cursor;
+        $sales = (new SaleFeed(new SalesClient($keys->environment, $http)))->run($token, $salesFrom, $now);
+        update_option(self::SALES_STARTED, $now->format(DATE_ATOM), false);
 
         return new FetchBatch([...$purchases->proposals, ...$sales], $purchases->cursor);
     }
