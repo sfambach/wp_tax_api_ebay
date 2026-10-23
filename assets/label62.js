@@ -130,7 +130,8 @@
 			var context = canvas.getContext('2d');
 			context.fillStyle = '#fff';
 			context.fillRect(0, 0, canvas.width, canvas.height);
-			await page.render({ canvasContext: context, viewport: viewport }).promise;
+			// Print intent with form fields drawn in: eBay's postage label keeps stamp and address in annotations.
+			await page.render({ canvasContext: context, viewport: viewport, intent: 'print', annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE }).promise;
 			var label = crop(canvas, Math.round(DPI / 25.4 * 12));
 
 			if (label) {
