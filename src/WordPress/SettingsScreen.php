@@ -18,7 +18,7 @@ final class SettingsScreen
     public function fields(array $notices): string
     {
         $html = $this->credentials($notices);
-        $html .= $this->accountDeletion() . $this->purchases(true);
+        $html .= $this->accountDeletion() . $this->purchases(true) . $this->insertFormat();
 
         if (self::modellerDrawsGuide()) {
             return $html;
@@ -90,7 +90,21 @@ final class SettingsScreen
     /** The rest of the tab under the shared layout (D-981): eBay's deletion notice and the purchases. */
     public function settings(): string
     {
-        return $this->accountDeletion() . $this->purchases(false);
+        return $this->accountDeletion() . $this->purchases(false) . $this->insertFormat();
+    }
+
+    /** Which printer the parcel insert is laid out for (page «eBay shipping»). */
+    private function insertFormat(): string
+    {
+        $options = '';
+
+        foreach ([Settings::INSERT_A6 => __('A6 (sheet printer)', 'taxebay'), Settings::INSERT_LABEL => __('62 mm label tape (Brother QL)', 'taxebay')] as $value => $label) {
+            $options .= '<option value="' . esc_attr($value) . '"' . selected(Settings::insertFormat(), $value, false) . '>' . esc_html($label) . '</option>';
+        }
+
+        return '<h3>' . esc_html__('Shipping', 'taxebay') . '</h3><p><label for="taxebay-insert-format">' . esc_html__('Parcel insert', 'taxebay')
+            . '</label> <select id="taxebay-insert-format" name="taxebay_insert_format">' . $options . '</select> <a href="'
+            . esc_url(admin_url('admin.php?page=' . ShippingScreen::PAGE)) . '">' . esc_html__('Open eBay shipping', 'taxebay') . '</a></p>';
     }
 
     /** From modeller 0.1.49 the tab has the shared layout: access, fetching, settings (D-981). */

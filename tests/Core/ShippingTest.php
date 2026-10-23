@@ -6,6 +6,8 @@ use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
+use TaxEbay\Core\Shipping\OpenShipment;
+use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
 
 /** The order follows eBay's documented Fulfillment answer, not a measured one. */
@@ -57,5 +59,18 @@ final class ShippingTest extends TestCase
     {
         $this->expectException(EbayApiException::class);
         (new ShippingClient(Environment::Production, new ScriptedTransport([])))->markShipped('t', 'A', [], 'POSTKUTSCHE', '1', '2026-10-23T08:00:00.000Z');
+    }
+
+    public function testSalesToTheSameBuyerAndAddressMakeOneParcel(): void
+    {
+        $a = OpenShipment::fromOrder(self::order('A', '2026-10-20'));
+        $b = OpenShipment::fromOrder(['address' => null] + self::order('B', '2026-10-21'));
+        $other = self::order('C', '2026-10-21');
+        $other['fulfillmentStartInstructions'][0]['shippingStep']['shipTo']['contactAddress']['addressLine1'] = 'Gasse 2';
+        $c = OpenShipment::fromOrder($other);
+
+        $parcels = Parcels::of([$a, $b, $c]);
+
+        self::assertSame([['A', 'B'], ['C']], array_map(static fn (array $parcel): array => array_map(static fn ($sale): string => $sale->orderId, $parcel), $parcels));
     }
 }

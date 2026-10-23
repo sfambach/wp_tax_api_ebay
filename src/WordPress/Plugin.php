@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.19';
+    public const VERSION    = '0.0.20';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -254,24 +254,29 @@ final class Plugin
         });
     }
 
+    /** One tracking number for every sale of the parcel (Parcels). */
     public function handleShip(): void
     {
         $this->guard(ShippingScreen::SHIP);
-        $order = isset($_POST['order']) ? sanitize_text_field(wp_unslash($_POST['order'])) : '';
-        $carrier = isset($_POST['carrier']) ? sanitize_key(wp_unslash($_POST['carrier'])) : '';
-        $tracking = isset($_POST['tracking']) ? preg_replace('/[^A-Za-z0-9]/', '', sanitize_text_field(wp_unslash($_POST['tracking']))) : '';
-        $carrier = strtoupper($carrier);
+        $wanted = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        $carrier = strtoupper(isset($_POST['carrier']) ? sanitize_key(wp_unslash($_POST['carrier'])) : '');
+        $tracking = (string) preg_replace('/[^A-Za-z0-9]/', '', isset($_POST['tracking']) ? sanitize_text_field(wp_unslash($_POST['tracking'])) : '');
 
         try {
-            $sale = self::openSale($order);
+            $sales = self::openSales($wanted);
 
-            if ($tracking === '' || $sale === null) {
+            if ($tracking === '' || $sales === []) {
                 throw new EbayApiException(__('Order not open any more, or no tracking number.', 'taxebay'));
             }
 
-            self::shippingClient()->markShipped(self::accessToken(), $sale->orderId, $sale->items, $carrier, (string) $tracking, gmdate('Y-m-d\TH:i:s.000\Z'));
-            /* translators: %s: eBay order number */
-            $this->notice(true, sprintf(__('%s reported as shipped.', 'taxebay'), $sale->orderId));
+            $token = self::accessToken();
+            $client = self::shippingClient();
+
+            foreach ($sales as $sale) {
+                $client->markShipped($token, $sale->orderId, $sale->items, $carrier, $tracking, gmdate('Y-m-d\TH:i:s.000\Z'));
+                /* translators: %s: eBay order number */
+                $this->notice(true, sprintf(__('%s reported as shipped.', 'taxebay'), $sale->orderId));
+            }
         } catch (EbayApiException | SecretDoesNotOpen $failure) {
             $this->notice(false, $failure->getMessage());
         }
@@ -283,33 +288,38 @@ final class Plugin
     public function handleInsert(): void
     {
         $this->guard(ShippingScreen::INSERT);
-        $order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : '';
 
         try {
-            $sale = self::openSale($order);
+            $sales = self::openSales(self::orderIds(isset($_GET['orders']) ? sanitize_text_field(wp_unslash($_GET['orders'])) : ''));
         } catch (EbayApiException | SecretDoesNotOpen $failure) {
             wp_die(esc_html($failure->getMessage()));
         }
 
-        if ($sale === null) {
+        if ($sales === []) {
             wp_die(esc_html__('Order not open any more.', 'taxebay'));
         }
 
         nocache_headers();
         header('Content-Type: text/html; charset=utf-8');
-        print (new ShippingScreen())->insert($sale);
+        print (new ShippingScreen())->insert($sales, Settings::insertFormat());
         exit;
     }
 
-    private static function openSale(string $orderId): ?OpenShipment
+    /** @return list<string> */
+    private static function orderIds(string $list): array
     {
-        foreach (self::shippingClient()->open(self::accessToken()) as $sale) {
-            if ($sale->orderId === $orderId) {
-                return $sale;
-            }
-        }
+        return array_values(array_filter(array_map('trim', explode(',', $list)), static fn (string $id): bool => $id !== ''));
+    }
 
-        return null;
+    /**
+     * The open sales among these ids; one read for all (CD-7).
+     *
+     * @param list<string> $orderIds
+     * @return list<OpenShipment>
+     */
+    private static function openSales(array $orderIds): array
+    {
+        return array_values(array_filter(self::shippingClient()->open(self::accessToken()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
     }
 
     private static function shippingClient(): ShippingClient
@@ -342,6 +352,10 @@ final class Plugin
     private static function saveKeys(array $post): bool
     {
         $field = static fn (string $name): string => is_string($post[$name] ?? null) ? trim(sanitize_text_field($post[$name])) : '';
+        if (isset($post['taxebay_insert_format'])) {
+            Settings::saveInsertFormat(sanitize_key($field('taxebay_insert_format')));
+        }
+
         // Under the shared layout the modeller stores the interval; an absent field must not switch fetching off.
         if (isset($post['taxebay_schedule'])) {
             Settings::saveSchedule(sanitize_key($field('taxebay_schedule')));

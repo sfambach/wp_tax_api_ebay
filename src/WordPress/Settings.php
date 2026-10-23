@@ -18,6 +18,9 @@ final class Settings
 
     public const KEYS = 'taxmod_ebay_keys';
     public const SCHEDULE = 'taxmod_ebay_schedule';
+    public const INSERT_FORMAT = 'taxmod_ebay_insert_format';
+    public const INSERT_A6 = 'a6';
+    public const INSERT_LABEL = 'label62';
 
     /** Seconds between two automatic fetches, by the label he picks; 0 means the inbox button only (D-943 E7). */
     public const INTERVALS = ['' => 0, 'hourly' => 3600, 'fourtimesdaily' => 21600, 'twicedaily' => 43200, 'daily' => 86400];
@@ -151,6 +154,17 @@ final class Settings
         $stored = get_option(self::CONNECTION, null);
 
         return is_array($stored) && ($stored['scopes'] ?? '') !== \TaxEbay\Core\OAuth\Scopes::asString();
+    }
+
+    /** Size of the parcel insert: A6 sheet or 62 mm tape of his Brother QL-810W. */
+    public static function insertFormat(): string
+    {
+        return get_option(self::INSERT_FORMAT, self::INSERT_A6) === self::INSERT_LABEL ? self::INSERT_LABEL : self::INSERT_A6;
+    }
+
+    public static function saveInsertFormat(string $format): void
+    {
+        update_option(self::INSERT_FORMAT, $format === self::INSERT_LABEL ? self::INSERT_LABEL : self::INSERT_A6, false);
     }
 
     /** «Delete access data» (D-981): the app keys go too; constants in wp-config.php stay, they are his file. */
