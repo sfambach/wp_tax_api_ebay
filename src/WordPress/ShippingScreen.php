@@ -27,7 +27,7 @@ final class ShippingScreen
      */
     public function page(array|string $open, array $notices, string $seller): string
     {
-        $html = '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1>';
+        $html = '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
 
         foreach ($notices as $notice) {
             $html .= '<div class="notice ' . ($notice['ok'] ? 'notice-success' : 'notice-error') . ' inline"><p>' . esc_html($notice['text']) . '</p></div>';
