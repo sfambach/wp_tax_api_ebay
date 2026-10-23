@@ -109,7 +109,7 @@
 			return picture(file);
 		}
 
-		var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+		var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer(), cMapUrl: taxebayLabel.cmaps, cMapPacked: true, standardFontDataUrl: taxebayLabel.fonts }).promise;
 		var pages = [];
 
 		for (var number = 1; number <= pdf.numPages; number++) {

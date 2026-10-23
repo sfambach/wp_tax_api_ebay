@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.29';
+    public const VERSION    = '0.0.30';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -266,6 +266,9 @@ final class Plugin
         wp_enqueue_script('taxebay-label62', plugins_url('assets/label62.js', $main), ['taxebay-pdfjs'], self::VERSION, true);
         wp_localize_script('taxebay-label62', 'taxebayLabel', [
             'worker' => plugins_url('assets/pdfjs/pdf.worker.min.js', $main),
+            // eBay's label PDF uses fonts it does not embed; without these pdf.js leaves that text out.
+            'cmaps'  => plugins_url('assets/pdfjs/cmaps/', $main),
+            'fonts'  => plugins_url('assets/pdfjs/standard_fonts/', $main),
             'empty'  => __('The PDF has no printed content.', 'taxebay'),
             'failed' => __('The label could not be read:', 'taxebay'),
             'noImage' => __('There is no image in the clipboard.', 'taxebay'),
