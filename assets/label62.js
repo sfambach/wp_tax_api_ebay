@@ -22,16 +22,27 @@
 	// gap: the blank height in pixels that ends the block.
 	function crop(canvas, gap) {
 		var data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-		var rows = new Uint32Array(canvas.height);
+		var ink = new Uint8Array(canvas.width * canvas.height);
+		var rows = new Uint32Array(canvas.height), across = new Uint32Array(canvas.width);
 		var MIN = 3;
 
+		for (var p = 0; p < ink.length; p++) {
+			if (data[p * 4] + data[p * 4 + 1] + data[p * 4 + 2] < 384) {
+				ink[p] = 1;
+				across[p % canvas.width]++;
+			}
+		}
+
+		// Lines through nearly the whole picture are a window or page frame (a screenshot), not the label.
 		for (var y = 0; y < canvas.height; y++) {
 			for (var x = 0; x < canvas.width; x++) {
-				var i = (y * canvas.width + x) * 4;
-
-				if (data[i] + data[i + 1] + data[i + 2] < 384) {
+				if (ink[y * canvas.width + x] && across[x] < canvas.height * 0.8) {
 					rows[y]++;
 				}
+			}
+
+			if (rows[y] > canvas.width * 0.8) {
+				rows[y] = 0;
 			}
 		}
 
@@ -56,9 +67,7 @@
 
 		for (var y2 = top; y2 <= bottom; y2++) {
 			for (var x2 = 0; x2 < canvas.width; x2++) {
-				var j = (y2 * canvas.width + x2) * 4;
-
-				if (data[j] + data[j + 1] + data[j + 2] < 384) {
+				if (ink[y2 * canvas.width + x2] && across[x2] < canvas.height * 0.8) {
 					columns[x2]++;
 				}
 			}
