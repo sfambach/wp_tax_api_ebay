@@ -4,6 +4,7 @@ namespace TaxEbay\WordPress;
 
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
+use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
@@ -122,14 +123,15 @@ final class ShippingScreen
             }
         }
 
+        $words = InsertText::for($parcel[0]->country);
         $page = $format === Settings::INSERT_LABEL
             ? '@page{size:62mm 100mm;margin:3mm}body{font:8pt/1.3 sans-serif}h1{font-size:9.5pt}img{width:22mm}'
             : '@page{size:A6;margin:8mm}body{font:11pt/1.4 sans-serif}h1{font-size:13pt}img{width:30mm}';
 
         return '<!doctype html><html><head><meta charset="utf-8"><title>' . esc_html($parcel[0]->orderId) . '</title>'
             . '<style>' . $page . 'body{margin:0}ul{padding-left:1.2em}img{float:right}</style></head>'
-            . '<body onload="print()"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html__('Thank you for your purchase!', 'taxebay') . '</h1>'
-            . '<ul>' . $items . '</ul><p>' . esc_html__('Documentation, sources and projects:', 'taxebay') . '<br><strong>' . esc_html($site) . '</strong></p>'
-            . '<p><small>' . esc_html__('Private sale. If anything is wrong, write to me on eBay — we will find a solution.', 'taxebay') . '</small></p></body></html>';
+            . '<body onload="print()"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
+            . '<ul>' . $items . '</ul><p>' . esc_html($words['docs']) . '<br><strong>' . esc_html($site) . '</strong></p>'
+            . '<p><small>' . esc_html($words['private']) . '</small></p></body></html>';
     }
 }

@@ -6,6 +6,7 @@ use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
+use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
@@ -85,5 +86,12 @@ final class ShippingTest extends TestCase
         self::assertCount(1, $open);
         self::assertTrue($open[0]->labelled);
         self::assertStringContainsString('orderfulfillmentstatus%3A%7BFULFILLED%7D', $http->sent[1]->url);
+    }
+
+    public function testInsertSpeaksTheBuyersLanguage(): void
+    {
+        self::assertSame('Vielen Dank für deinen Kauf!', InsertText::for('at')['thanks']);
+        self::assertSame('Thank you for your purchase!', InsertText::for('FR')['thanks']);
+        self::assertSame('DE', OpenShipment::fromOrder(self::order('A', '2026-10-20'))->country);
     }
 }

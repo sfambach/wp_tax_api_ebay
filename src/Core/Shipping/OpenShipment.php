@@ -23,6 +23,7 @@ final class OpenShipment
         public readonly ?string $total,
         public readonly string $currency,
         public readonly bool $labelled = false,
+        public readonly string $country = '',
     ) {
     }
 
@@ -65,6 +66,7 @@ final class OpenShipment
             isset($total['value']) ? (string) $total['value'] : null,
             (string) ($total['currency'] ?? 'EUR'),
             $labelled,
+            (string) ($place['countryCode'] ?? ''),
         );
     }
 }
