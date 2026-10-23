@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.37';
+    public const VERSION    = '0.0.38';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 

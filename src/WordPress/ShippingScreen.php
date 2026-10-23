@@ -136,18 +136,24 @@ final class ShippingScreen
         }
 
         $words = InsertText::for($parcel[0]->country);
+        // Page margin 0 keeps the browser's header and footer off; the sheet keeps its own padding.
         $page = $format === Settings::INSERT_LABEL
-            ? '@page{size:62mm 100mm;margin:3mm}body{font:8pt/1.3 sans-serif}h1{font-size:9.5pt}img{width:22mm}'
-            : '@page{size:A6;margin:8mm}body{font:11pt/1.4 sans-serif}h1{font-size:13pt}img{width:30mm}';
+            ? '@page{size:62mm 100mm;margin:0}.sheet{width:62mm;height:100mm;padding:4.5mm 3mm;font-size:8pt}img{width:18mm}'
+            : '@page{size:A6;margin:0}.sheet{width:105mm;height:148mm;padding:8mm;font-size:11pt}img{width:30mm}';
 
         return '<!doctype html><html><head><meta charset="utf-8"><title>' . esc_html($parcel[0]->orderId) . '</title>'
             // His signature in handwriting (his wish, 2026-10-23); without the web font the browser's own cursive.
             . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=block">'
-            . '<style>' . $page . 'body{margin:0}ul{padding-left:1.2em}img{float:right}.sign{font-family:"Dancing Script",cursive;font-size:1.6em;margin:.4em 0 0}</style></head>'
-            . '<body onload="document.fonts.ready.then(function(){print()})"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
+            . '<style>' . $page . 'html,body{margin:0}.sheet{box-sizing:border-box;overflow:hidden;font-family:sans-serif;line-height:1.3}'
+            . 'h1{font-size:1.2em;margin:0 0 .4em}ul{padding-left:1.2em;margin:.4em 0}p{margin:.4em 0}img{float:right;margin:0 0 .3em .3em}'
+            . '.sign{font-family:"Dancing Script",cursive;font-size:1.6em;line-height:1.1}</style>'
+            // One sheet, always: the text shrinks until it fits (long item titles, several items in one parcel).
+            . '<script>function fit(){var s=document.querySelector(".sheet"),size=parseFloat(getComputedStyle(s).fontSize);'
+            . 'while(s.scrollHeight>s.clientHeight&&size>5){size-=.5;s.style.fontSize=size+"px";}print();}</script></head>'
+            . '<body onload="document.fonts.ready.then(fit)"><div class="sheet"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
             . '<ul>' . $items . '</ul><p>' . esc_html($words['docs']) . '<br><strong>' . esc_html($site) . '</strong></p>'
             . '<p><small>' . esc_html($words['private']) . '<br>' . esc_html(self::reference($ids, $seller, $words)) . '</small></p>'
-            . '<p class="sign">' . esc_html($words['enjoy']) . '<br>SFA</p></body></html>';
+            . '<p class="sign">' . esc_html($words['enjoy']) . '<br>SFA</p></div></body></html>';
     }
 
     /**
