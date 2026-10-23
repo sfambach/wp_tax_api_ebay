@@ -13,11 +13,13 @@
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = taxebayLabel.worker;
 
-	// Ink only: light grey (frames, watermarks, anti-aliasing) and single specks do not widen the label.
-	// scale: pixels per millimetre of the original, 0 when unknown (a picture).
-	function crop(canvas, scale) {
+	// Ink only: light grey (frames, cut marks, anti-aliasing) and single specks do not widen the label. Only the
+	// first block of ink counts — eBay's PDF carries the postage label on top and notes further down the page.
+	// gap: the blank height in pixels that ends the block.
+	function crop(canvas, gap) {
 		var data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-		var rows = new Uint32Array(canvas.height), columns = new Uint32Array(canvas.width);
+		var rows = new Uint32Array(canvas.height);
+		var MIN = 3;
 
 		for (var y = 0; y < canvas.height; y++) {
 			for (var x = 0; x < canvas.width; x++) {
@@ -25,32 +27,52 @@
 
 				if (data[i] + data[i + 1] + data[i + 2] < 384) {
 					rows[y]++;
-					columns[x]++;
 				}
 			}
 		}
 
-		var MIN = 3;
 		var top = rows.findIndex(function (n) { return n >= MIN; });
-		var left = columns.findIndex(function (n) { return n >= MIN; });
 
-		if (top < 0 || left < 0) {
+		if (top < 0) {
 			return null;
 		}
 
-		var bottom = canvas.height - 1, right = canvas.width - 1;
-		while (rows[bottom] < MIN) { bottom--; }
+		var bottom = top;
+
+		for (var row = top, blank = 0; row < canvas.height && blank < gap; row++) {
+			if (rows[row] >= MIN) {
+				bottom = row;
+				blank = 0;
+			} else {
+				blank++;
+			}
+		}
+
+		var columns = new Uint32Array(canvas.width);
+
+		for (var y2 = top; y2 <= bottom; y2++) {
+			for (var x2 = 0; x2 < canvas.width; x2++) {
+				var j = (y2 * canvas.width + x2) * 4;
+
+				if (data[j] + data[j + 1] + data[j + 2] < 384) {
+					columns[x2]++;
+				}
+			}
+		}
+
+		var left = columns.findIndex(function (n) { return n >= MIN; });
+		var right = canvas.width - 1;
 		while (columns[right] < MIN) { right--; }
 
-		var pad = Math.round(DPI / 25.4);
+		var pad = Math.round(gap / 12);
 		left = Math.max(0, left - pad);
 		top = Math.max(0, top - pad);
 		right = Math.min(canvas.width - 1, right + pad);
 		bottom = Math.min(canvas.height - 1, bottom + pad);
 
 		var width = right - left + 1, height = bottom - top + 1;
-		// Turned only when it would not fit across the tape at its own size.
-		var upright = width > height && (scale === 0 || width / scale > PRINT_MM);
+		// Long side along the tape: the short side then fills its width and the label prints large.
+		var upright = width > height;
 		var out = document.createElement('canvas');
 		out.width = upright ? height : width;
 		out.height = upright ? width : height;
@@ -62,8 +84,6 @@
 		}
 
 		context.drawImage(canvas, left, top, width, height, 0, 0, width, height);
-		// Never larger than printed by eBay: a postage mark must keep its size.
-		out.millimetres = scale === 0 ? PRINT_MM : Math.min(PRINT_MM, out.width / scale);
 		return out;
 	}
 
@@ -76,7 +96,7 @@
 		context.fillStyle = '#fff';
 		context.fillRect(0, 0, canvas.width, canvas.height);
 		context.drawImage(bitmap, 0, 0);
-		var label = crop(canvas, 0);
+		var label = crop(canvas, Math.round(canvas.height * 0.06));
 		return label ? [label] : [];
 	}
 
@@ -98,7 +118,7 @@
 			context.fillStyle = '#fff';
 			context.fillRect(0, 0, canvas.width, canvas.height);
 			await page.render({ canvasContext: context, viewport: viewport }).promise;
-			var label = crop(canvas, DPI / 25.4);
+			var label = crop(canvas, Math.round(DPI / 25.4 * 12));
 
 			if (label) {
 				pages.push(label);
@@ -117,15 +137,15 @@
 		var longest = 0;
 
 		pages.forEach(function (label) {
-			longest = Math.max(longest, label.millimetres * label.height / label.width);
-			body += '<section><img style="width:' + label.millimetres.toFixed(1) + 'mm" src="' + label.toDataURL('image/png') + '" alt=""><p></p></section>';
+			longest = Math.max(longest, PRINT_MM * label.height / label.width);
+			body += '<section><img src="' + label.toDataURL('image/png') + '" alt=""><p></p></section>';
 		});
 
 		doc.open();
 		doc.write('<!doctype html><html><head><meta charset="utf-8"><style>'
 			+ '@page{size:' + TAPE_MM + 'mm ' + Math.ceil(longest + 12) + 'mm;margin:0}'
 			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:3mm}section+section{break-before:page}'
-			+ 'img{display:block;margin:0 auto}p{margin:1mm 0 0}</style></head><body>' + body + '</body></html>');
+			+ 'img{display:block;width:' + PRINT_MM + 'mm}p{margin:1mm 0 0}</style></head><body>' + body + '</body></html>');
 		doc.close();
 		doc.querySelectorAll('p').forEach(function (line) { line.textContent = caption; });
 
