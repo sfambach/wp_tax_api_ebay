@@ -1,6 +1,6 @@
 /**
  * Fits an eBay shipping label (PDF, image or screenshot) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
- * its printed area, turned upright and printed at tape width with order number and seller underneath. The PDF never
+ * its printed area, turned upright and printed at tape width with order number and seller in its empty corner. The PDF never
  * leaves the browser.
  */
 (function () {
@@ -8,11 +8,11 @@
 
 	var TAPE_MM = 62;
 	// The QL-810W cannot print the outer 1.5 mm of the tape; 3 mm keep clear of it.
-	var PRINT_MM = 56;
+	var PRINT_MM = 58;
 	// The Brother driver's paper for endless 62 mm tape is 62 × 100 mm; a longer page is shrunk by the browser to fit
 	// it (the first prints came out at half width). So the label fits into one such page.
 	var PAGE_MM = 100;
-	var FREE_MM = PAGE_MM - 6 - 5;
+	var FREE_MM = PAGE_MM - 3;
 	var DPI = 300;
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = taxebayLabel.worker;
@@ -97,6 +97,7 @@
 		}
 
 		context.drawImage(canvas, left, top, width, height, 0, 0, width, height);
+		out.upright = upright;
 		return out;
 	}
 
@@ -143,6 +144,29 @@
 		return pages;
 	}
 
+	// Order and seller go into the empty bottom right corner of the label itself, so the label keeps the full page.
+	function stamp(label, caption) {
+		var context = label.getContext('2d');
+		var size = Math.round(Math.min(label.width, label.height) * 0.035);
+		var margin = Math.round(size * 0.6);
+		context.save();
+		// crop() left its turn on this context.
+		context.setTransform(1, 0, 0, 1, 0, 0);
+		context.fillStyle = '#000';
+		context.font = size + 'px sans-serif';
+		context.textAlign = 'right';
+
+		if (label.upright) {
+			context.translate(margin, label.height - margin);
+			context.rotate(Math.PI / 2);
+		} else {
+			context.translate(label.width - margin, label.height - margin);
+		}
+
+		context.fillText(caption, 0, 0);
+		context.restore();
+	}
+
 	function print(pages, caption) {
 		var frame = document.createElement('iframe');
 		frame.style.cssText = 'position:fixed;width:0;height:0;border:0';
@@ -151,16 +175,16 @@
 		var body = '';
 		pages.forEach(function (label) {
 			var width = Math.min(PRINT_MM, FREE_MM * label.width / label.height);
-			body += '<section><img style="width:' + width.toFixed(1) + 'mm" src="' + label.toDataURL('image/png') + '" alt=""><p></p></section>';
+			stamp(label, caption);
+			body += '<section><img style="width:' + width.toFixed(1) + 'mm" src="' + label.toDataURL('image/png') + '" alt=""></section>';
 		});
 
 		doc.open();
 		doc.write('<!doctype html><html><head><meta charset="utf-8"><style>'
 			+ '@page{size:' + TAPE_MM + 'mm ' + PAGE_MM + 'mm;margin:0}'
-			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:3mm}section+section{break-before:page}'
-			+ 'img{display:block;margin:0 auto}p{margin:1mm 0 0;text-align:center}</style></head><body>' + body + '</body></html>');
+			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:1.5mm 2mm}section+section{break-before:page}'
+			+ 'img{display:block;margin:0 auto}</style></head><body>' + body + '</body></html>');
 		doc.close();
-		doc.querySelectorAll('p').forEach(function (line) { line.textContent = caption; });
 
 		var images = Array.prototype.slice.call(doc.images);
 		Promise.all(images.map(function (image) {
