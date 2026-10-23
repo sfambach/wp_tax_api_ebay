@@ -7,11 +7,14 @@ use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseFeed;
 use TaxEbay\Core\Purchases\PurchasesClient;
+use TaxEbay\Core\Sales\SaleFeed;
+use TaxEbay\Core\Sales\SalesClient;
 use Taxmod\Core\Import\FetchBatch;
 use Taxmod\Core\Import\FetchingSource;
 
 /**
- * The eBay source of the modeller's inbox (D-953): purchases through the Trading API (D-950). The inbox calls `fetch`
+ * The eBay source of the modeller's inbox (D-953): purchases through the Trading API (D-950), sales through the
+ * Fulfillment API (D-979). The inbox calls `fetch`
  * on its schedule and on its button; this module keeps no table and no review page of its own.
  */
 final class EbaySource implements FetchingSource
@@ -39,6 +42,10 @@ final class EbaySource implements FetchingSource
         $http = WpHttpTransport::budgeted();
         $token = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
 
-        return (new PurchaseFeed(new PurchasesClient($keys->environment, $http)))->run($token, $cursor, new DateTimeImmutable('now'));
+        $now = new DateTimeImmutable('now');
+        $purchases = (new PurchaseFeed(new PurchasesClient($keys->environment, $http)))->run($token, $cursor, $now);
+        $sales = (new SaleFeed(new SalesClient($keys->environment, $http)))->run($token, $cursor, $now);
+
+        return new FetchBatch([...$purchases->proposals, ...$sales], $purchases->cursor);
     }
 }

@@ -5,6 +5,8 @@ namespace TaxEbay\Tests\Core;
 use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
+use DateTimeImmutable;
+use TaxEbay\Core\Sales\SaleFeed;
 use TaxEbay\Core\Sales\SaleMapper;
 use TaxEbay\Core\Sales\SalesClient;
 
@@ -70,5 +72,27 @@ final class SalesTest extends TestCase
     {
         self::assertTrue((new SaleMapper())->isCancelled(['cancelStatus' => ['cancelState' => 'CANCELED']]));
         self::assertFalse((new SaleMapper())->isCancelled(['cancelStatus' => ['cancelState' => 'NONE_REQUESTED']]));
+    }
+
+    public function testFeedAsksFromTheCursorLessADayAndSkipsCancelled(): void
+    {
+        $orders = json_decode(self::fixture(), true)['orders'];
+        $orders[] = ['orderId' => 'X', 'cancelStatus' => ['cancelState' => 'CANCELED']];
+        $http = new ScriptedTransport([new HttpResponse(200, (string) json_encode(['orders' => $orders])), new HttpResponse(200, '{"fulfillments":[]}')]);
+
+        $proposals = (new SaleFeed(new SalesClient(Environment::Production, $http)))
+            ->run('token', '2026-10-20T06:00:00+00:00', new DateTimeImmutable('2026-10-23T06:00:00+00:00'));
+
+        self::assertCount(1, $proposals);
+        self::assertSame('sold', $proposals[0]->proposal->kind->value);
+        self::assertStringContainsString('2026-10-19T06%3A00%3A00.000Z', $http->sent[0]->url);
+    }
+
+    public function testSkuNamesTheOfferBeforeTheItemId(): void
+    {
+        $order = json_decode(self::fixture(), true)['orders'][0];
+        $order['lineItems'][0]['sku'] = 'taxmod-42';
+
+        self::assertSame('taxmod-42', (new SaleMapper())->map($order)->lines[0]->articleNumber);
     }
 }

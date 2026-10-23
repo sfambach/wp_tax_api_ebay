@@ -77,7 +77,8 @@ final class SaleMapper
             (string) ($item['title'] ?? ''),
             (float) $quantity,
             $cost === null ? null : self::divide($cost, $quantity),
-            isset($item['legacyItemId']) ? (string) $item['legacyItemId'] : null,
+            // His own SKU (`taxmod-<offer>`, D-976) names the offer in the model; without one the eBay item id.
+            ($item['sku'] ?? '') !== '' ? (string) $item['sku'] : (isset($item['legacyItemId']) ? (string) $item['legacyItemId'] : null),
         );
     }
 
