@@ -96,8 +96,9 @@ final class ShippingScreen
             . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
             . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
             . '<a class="button" target="_blank" rel="noopener" href="' . esc_url($insert) . '">' . esc_html__('Print insert', 'taxebay') . '</a> '
-            . '<label class="button">' . esc_html__('Label PDF → 62 mm', 'taxebay')
-            . '<input type="file" accept="application/pdf" hidden data-taxebay-label="' . esc_attr(self::reference($ids, $seller)) . '"></label> '
+            . '<label class="button">' . esc_html__('Label PDF/image → 62 mm', 'taxebay')
+            . '<input type="file" accept="application/pdf,image/*" hidden data-taxebay-label="' . esc_attr(self::reference($ids, $seller)) . '"></label> '
+            . '<button type="button" class="button" data-taxebay-paste="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Paste screenshot → 62 mm', 'taxebay') . '</button> '
             . ($labelled
                 ? '<span class="description">' . esc_html__('Label bought at eBay — eBay already counts it as shipped. Pack it and add the insert.', 'taxebay') . '</span>'
                 : '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '

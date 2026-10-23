@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.24';
+    public const VERSION    = '0.0.25';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -268,6 +268,7 @@ final class Plugin
             'worker' => plugins_url('assets/pdfjs/pdf.worker.min.js', $main),
             'empty'  => __('The PDF has no printed content.', 'taxebay'),
             'failed' => __('The label could not be read:', 'taxebay'),
+            'noImage' => __('There is no image in the clipboard.', 'taxebay'),
         ]);
     }
 

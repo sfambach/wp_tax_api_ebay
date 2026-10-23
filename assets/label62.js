@@ -1,5 +1,5 @@
 /**
- * Fits an eBay shipping label (PDF) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
+ * Fits an eBay shipping label (PDF, image or screenshot) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
  * its printed area, turned upright and printed at tape width with order number and seller underneath. The PDF never
  * leaves the browser.
  */
@@ -49,7 +49,24 @@
 		return out;
 	}
 
+	async function picture(blob) {
+		var bitmap = await createImageBitmap(blob);
+		var canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		var context = canvas.getContext('2d');
+		context.fillStyle = '#fff';
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		context.drawImage(bitmap, 0, 0);
+		var label = crop(canvas);
+		return label ? [label] : [];
+	}
+
 	async function labels(file) {
+		if (file.type.indexOf('image/') === 0) {
+			return picture(file);
+		}
+
 		var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
 		var pages = [];
 
@@ -104,6 +121,19 @@
 		});
 	}
 
+	function run(source, caption) {
+		return labels(source).then(function (pages) {
+			if (!pages.length) {
+				window.alert(taxebayLabel.empty);
+				return;
+			}
+
+			print(pages, caption);
+		}).catch(function (failure) {
+			window.alert(taxebayLabel.failed + ' ' + failure.message);
+		});
+	}
+
 	document.addEventListener('change', function (event) {
 		var input = event.target;
 
@@ -111,17 +141,36 @@
 			return;
 		}
 
-		labels(input.files[0]).then(function (pages) {
-			if (!pages.length) {
-				window.alert(taxebayLabel.empty);
-				return;
-			}
-
-			print(pages, input.getAttribute('data-taxebay-label'));
-		}).catch(function (failure) {
-			window.alert(taxebayLabel.failed + ' ' + failure.message);
-		}).finally(function () {
+		run(input.files[0], input.getAttribute('data-taxebay-label')).finally(function () {
 			input.value = '';
 		});
+	});
+
+	// A screenshot of the label from the clipboard; reading it needs the browser's permission.
+	document.addEventListener('click', async function (event) {
+		var button = event.target.closest('[data-taxebay-paste]');
+
+		if (!button) {
+			return;
+		}
+
+		event.preventDefault();
+
+		try {
+			var items = await navigator.clipboard.read();
+
+			for (var i = 0; i < items.length; i++) {
+				var type = items[i].types.find(function (kind) { return kind.indexOf('image/') === 0; });
+
+				if (type) {
+					await run(await items[i].getType(type), button.getAttribute('data-taxebay-paste'));
+					return;
+				}
+			}
+
+			window.alert(taxebayLabel.noImage);
+		} catch (failure) {
+			window.alert(taxebayLabel.failed + ' ' + failure.message);
+		}
 	});
 }());
