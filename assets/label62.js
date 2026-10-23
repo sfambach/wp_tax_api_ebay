@@ -12,7 +12,8 @@
 	// The Brother driver's paper for endless 62 mm tape is 62 × 100 mm; a longer page is shrunk by the browser to fit
 	// it (the first prints came out at half width). So the label fits into one such page.
 	var PAGE_MM = 100;
-	var FREE_MM = PAGE_MM - 3;
+	// The QL-810W leaves about 3 mm unprinted at the start and end of each label.
+	var FREE_MM = PAGE_MM - 9;
 	var DPI = 300;
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = taxebayLabel.worker;
@@ -182,7 +183,7 @@
 		doc.open();
 		doc.write('<!doctype html><html><head><meta charset="utf-8"><style>'
 			+ '@page{size:' + TAPE_MM + 'mm ' + PAGE_MM + 'mm;margin:0}'
-			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:1.5mm 2mm}section+section{break-before:page}'
+			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:4.5mm 2mm}section+section{break-before:page}'
 			+ 'img{display:block;margin:0 auto}</style></head><body>' + body + '</body></html>');
 		doc.close();
 
