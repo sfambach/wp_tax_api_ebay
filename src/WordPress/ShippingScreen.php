@@ -25,7 +25,7 @@ final class ShippingScreen
      * @param list<OpenShipment>|string $open the sales, or why they could not be read
      * @param list<array{ok: bool, text: string}> $notices
      */
-    public function page(array|string $open, array $notices): string
+    public function page(array|string $open, array $notices, string $seller): string
     {
         $html = '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1>';
 
@@ -47,14 +47,14 @@ final class ShippingScreen
         }
 
         foreach (Parcels::of($open) as $parcel) {
-            $html .= $this->card($parcel);
+            $html .= $this->card($parcel, $seller);
         }
 
         return $html . '</div>';
     }
 
     /** @param non-empty-list<OpenShipment> $parcel sales to one buyer at one address — one parcel */
-    private function card(array $parcel): string
+    private function card(array $parcel, string $seller): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
@@ -96,6 +96,8 @@ final class ShippingScreen
             . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
             . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
             . '<a class="button" target="_blank" rel="noopener" href="' . esc_url($insert) . '">' . esc_html__('Print insert', 'taxebay') . '</a> '
+            . '<label class="button">' . esc_html__('Label PDF → 62 mm', 'taxebay')
+            . '<input type="file" accept="application/pdf" hidden data-taxebay-label="' . esc_attr(self::reference($ids, $seller)) . '"></label> '
             . ($labelled
                 ? '<span class="description">' . esc_html__('Label bought at eBay — eBay already counts it as shipped. Pack it and add the insert.', 'taxebay') . '</span>'
                 : '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
@@ -111,8 +113,9 @@ final class ShippingScreen
      *
      * @param non-empty-list<OpenShipment> $parcel
      */
-    public function insert(array $parcel, string $format): string
+    public function insert(array $parcel, string $format, string $seller): string
     {
+        $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
         $site = home_url('/');
         $qr = (new QRCode(new QROptions(['outputType' => 'svg', 'outputBase64' => true])))->render($site);
         $items = '';
@@ -129,9 +132,26 @@ final class ShippingScreen
             : '@page{size:A6;margin:8mm}body{font:11pt/1.4 sans-serif}h1{font-size:13pt}img{width:30mm}';
 
         return '<!doctype html><html><head><meta charset="utf-8"><title>' . esc_html($parcel[0]->orderId) . '</title>'
-            . '<style>' . $page . 'body{margin:0}ul{padding-left:1.2em}img{float:right}</style></head>'
-            . '<body onload="print()"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
+            // His signature in handwriting (his wish, 2026-10-23); without the web font the browser's own cursive.
+            . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=block">'
+            . '<style>' . $page . 'body{margin:0}ul{padding-left:1.2em}img{float:right}.sign{font-family:"Dancing Script",cursive;font-size:1.6em;margin:.4em 0 0}</style></head>'
+            . '<body onload="document.fonts.ready.then(function(){print()})"><img src="' . esc_attr($qr) . '" alt=""><h1>' . esc_html($words['thanks']) . '</h1>'
             . '<ul>' . $items . '</ul><p>' . esc_html($words['docs']) . '<br><strong>' . esc_html($site) . '</strong></p>'
-            . '<p><small>' . esc_html($words['private']) . '</small></p></body></html>';
+            . '<p><small>' . esc_html($words['private']) . '<br>' . esc_html(self::reference($ids, $seller, $words)) . '</small></p>'
+            . '<p class="sign">' . esc_html($words['enjoy']) . '<br>SFA</p></body></html>';
+    }
+
+    /**
+     * «Order … · Seller …» — under the label and on the insert, so parcel, label and eBay order can be matched.
+     *
+     * @param list<string> $ids
+     * @param array{order: string, seller: string}|null $words the buyer's language on the insert; his own on the label
+     */
+    private static function reference(array $ids, string $seller, ?array $words = null): string
+    {
+        $order = $words['order'] ?? __('Order', 'taxebay');
+        $by = $words['seller'] ?? __('Seller', 'taxebay');
+
+        return $order . ' ' . implode(', ', $ids) . ($seller === '' ? '' : ' · ' . $by . ' ' . $seller);
     }
 }

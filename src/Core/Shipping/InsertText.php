@@ -10,7 +10,7 @@ final class InsertText
 {
     private const GERMAN = ['DE', 'AT', 'CH', 'LI', 'LU'];
 
-    /** @return array{thanks: string, docs: string, private: string} */
+    /** @return array{thanks: string, docs: string, private: string, enjoy: string, order: string, seller: string} */
     public static function for(string $countryCode): array
     {
         return in_array(strtoupper($countryCode), self::GERMAN, true)
@@ -18,11 +18,17 @@ final class InsertText
                 'thanks'  => 'Vielen Dank für deinen Kauf!',
                 'docs'    => 'Dokumentation, Quellen und weitere Projekte:',
                 'private' => 'Privatverkauf. Gibt es ein Problem, schreib mir über eBay – wir finden eine Lösung.',
+                'enjoy'   => 'Viel Spaß damit!',
+                'order'   => 'Bestellung',
+                'seller'  => 'Verkäufer',
             ]
             : [
                 'thanks'  => 'Thank you for your purchase!',
                 'docs'    => 'Documentation, sources and more projects:',
                 'private' => 'Private sale. If anything is wrong, write to me on eBay — we will find a solution.',
+                'enjoy'   => 'Have fun with it!',
+                'order'   => 'Order',
+                'seller'  => 'Seller',
             ];
     }
 }

@@ -46,6 +46,10 @@ the developer portal; this module stores only the eBay user name, so the exempti
 Copyright (C) 2026 Stefan Fambach (SteFam), https://www.fambach.net — [PolyForm Noncommercial 1.0.0](LICENSE.md).
 Commercial use needs the owner's prior consent.
 
+## Third-party code
+
+- `assets/pdfjs/` — [PDF.js](https://mozilla.github.io/pdf.js/) 3.11.174, © Mozilla Foundation, Apache License 2.0. Reads the eBay label PDF in the browser for the 62 mm print.
+
 ## AI disclosure
 
 This repository is created and maintained with the help of AI (Claude by Anthropic). All changes are reviewed by the owner.

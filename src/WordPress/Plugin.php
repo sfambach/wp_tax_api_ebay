@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.22';
+    public const VERSION    = '0.0.23';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -243,15 +243,38 @@ final class Plugin
     {
         $parent = isset($GLOBALS['admin_page_hooks']['taxmod']) ? 'taxmod' : 'tools.php';
 
-        add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
+        $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
             try {
                 $open = self::shippingClient()->open(self::accessToken(), self::labelledSince());
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices());
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller());
         });
+
+        if ($hook !== false) {
+            add_action('load-' . $hook, self::enqueueLabelPrint(...));
+        }
+    }
+
+    /** pdf.js ships with the plugin, so the label PDF is read in the browser and never uploaded. */
+    private static function enqueueLabelPrint(): void
+    {
+        $main = dirname(__DIR__, 2) . '/wp-tax-api-ebay.php';
+        wp_enqueue_script('taxebay-pdfjs', plugins_url('assets/pdfjs/pdf.min.js', $main), [], '3.11.174', true);
+        wp_enqueue_script('taxebay-label62', plugins_url('assets/label62.js', $main), ['taxebay-pdfjs'], self::VERSION, true);
+        wp_localize_script('taxebay-label62', 'taxebayLabel', [
+            'worker' => plugins_url('assets/pdfjs/pdf.worker.min.js', $main),
+            'empty'  => __('The PDF has no printed content.', 'taxebay'),
+            'failed' => __('The label could not be read:', 'taxebay'),
+        ]);
+    }
+
+    /** The eBay user name his account is connected as. */
+    private static function seller(): string
+    {
+        return Settings::connection()['username'] ?? '';
     }
 
     /** One tracking number for every sale of the parcel (Parcels). */
@@ -301,7 +324,7 @@ final class Plugin
 
         nocache_headers();
         header('Content-Type: text/html; charset=utf-8');
-        print (new ShippingScreen())->insert($sales, Settings::insertFormat());
+        print (new ShippingScreen())->insert($sales, Settings::insertFormat(), self::seller());
         exit;
     }
 

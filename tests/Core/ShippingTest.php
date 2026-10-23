@@ -92,6 +92,8 @@ final class ShippingTest extends TestCase
     {
         self::assertSame('Vielen Dank für deinen Kauf!', InsertText::for('at')['thanks']);
         self::assertSame('Thank you for your purchase!', InsertText::for('FR')['thanks']);
+        self::assertSame('Viel Spaß damit!', InsertText::for('DE')['enjoy']);
+        self::assertSame('Seller', InsertText::for('US')['seller']);
         self::assertSame('DE', OpenShipment::fromOrder(self::order('A', '2026-10-20'))->country);
     }
 }
