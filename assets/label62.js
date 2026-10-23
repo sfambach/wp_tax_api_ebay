@@ -109,7 +109,8 @@
 		context.fillStyle = '#fff';
 		context.fillRect(0, 0, canvas.width, canvas.height);
 		context.drawImage(bitmap, 0, 0);
-		var label = crop(canvas, Math.round(canvas.height * 0.06));
+		// A screenshot is usually cut close already; only a wide blank (a fifth of it) ends the label.
+		var label = crop(canvas, Math.round(canvas.height * 0.2));
 		return label ? [label] : [];
 	}
 
