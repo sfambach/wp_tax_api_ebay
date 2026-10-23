@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.39';
+    public const VERSION    = '0.0.40';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -48,6 +48,7 @@ final class Plugin
         add_action('admin_menu', $plugin->registerShippingPage(...), 21);
         add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
         add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
+        add_action('admin_post_taxebay_pack', $plugin->handlePack(...));
     }
 
     /**
@@ -250,7 +251,7 @@ final class Plugin
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller());
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), Settings::packed(), isset($_GET['packed']));
         });
 
         if ($hook !== false && ShippingScreen::LABEL_PRINT) {
@@ -306,6 +307,24 @@ final class Plugin
             }
         } catch (EbayApiException | SecretDoesNotOpen $failure) {
             $this->notice(false, $failure->getMessage());
+        }
+
+        wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        exit;
+    }
+
+    /** «Packed»: the parcel leaves the list; eBay knows nothing of it, it is his note only. */
+    public function handlePack(): void
+    {
+        $this->guard(ShippingScreen::PACK);
+        $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+
+        if (isset($_POST['packed']) && sanitize_key(wp_unslash($_POST['packed'])) === '0') {
+            Settings::unmarkPacked($orders);
+        } else {
+            Settings::markPacked($orders, time());
+            /* translators: %s: eBay order numbers */
+            $this->notice(true, sprintf(__('%s marked as packed.', 'taxebay'), implode(', ', $orders)));
         }
 
         wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));

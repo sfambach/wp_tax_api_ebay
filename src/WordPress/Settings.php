@@ -19,6 +19,7 @@ final class Settings
     public const KEYS = 'taxmod_ebay_keys';
     public const SCHEDULE = 'taxmod_ebay_schedule';
     public const INSERT_FORMAT = 'taxmod_ebay_insert_format';
+    public const PACKED = 'taxmod_ebay_packed';
     public const INSERT_A6 = 'a6';
     public const INSERT_LABEL = 'label62';
 
@@ -165,6 +166,35 @@ final class Settings
     public static function saveInsertFormat(string $format): void
     {
         update_option(self::INSERT_FORMAT, $format === self::INSERT_LABEL ? self::INSERT_LABEL : self::INSERT_A6, false);
+    }
+
+    /** A packed parcel is remembered this long; eBay drops it from the shipping list well before. */
+    private const PACKED_DAYS = 30;
+
+    /** @return array<string, int> order id → when he marked it packed */
+    public static function packed(): array
+    {
+        $packed = get_option(self::PACKED, []);
+
+        return is_array($packed) ? array_map('intval', $packed) : [];
+    }
+
+    /** @param list<string> $orderIds */
+    public static function markPacked(array $orderIds, int $now): void
+    {
+        $kept = array_filter(self::packed(), static fn (int $at): bool => $at > $now - self::PACKED_DAYS * 86400);
+
+        foreach ($orderIds as $orderId) {
+            $kept[$orderId] = $now;
+        }
+
+        update_option(self::PACKED, $kept, false);
+    }
+
+    /** @param list<string> $orderIds */
+    public static function unmarkPacked(array $orderIds): void
+    {
+        update_option(self::PACKED, array_diff_key(self::packed(), array_flip($orderIds)), false);
     }
 
     /** «Delete access data» (D-981): the app keys go too; constants in wp-config.php stay, they are his file. */

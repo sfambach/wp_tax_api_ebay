@@ -40,7 +40,8 @@ final class ShippingClient
         if ($labelledSince !== null) {
             // eBay accepts only {NOT_STARTED|IN_PROGRESS} or {FULFILLED|IN_PROGRESS}; IN_PROGRESS came with the first read.
             $recent = $this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED|IN_PROGRESS}');
-            $open = [...$open, ...array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled)];
+            $labelled = array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled);
+            $open = [...$open, ...array_map(fn (OpenShipment $sale): OpenShipment => $sale->withTracking($this->tracking($accessToken, $sale->orderId)), $labelled)];
         }
 
         usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
@@ -79,6 +80,35 @@ final class ShippingClient
         }
 
         return $found;
+    }
+
+    /**
+     * The tracking numbers eBay holds for an order, comma-separated. One call per labelled order: the order search
+     * does not carry them. An unreadable answer gives '' — the number is shown, not needed for anything.
+     */
+    private function tracking(string $accessToken, string $orderId): string
+    {
+        $response = $this->http->send(new HttpRequest(
+            'GET',
+            $this->environment->apiHost() . '/sell/fulfillment/v1/order/' . rawurlencode($orderId) . '/shipping_fulfillment',
+            self::headers($accessToken)
+        ));
+
+        if ($response->status !== 200) {
+            return '';
+        }
+
+        $numbers = [];
+
+        foreach ((array) ($response->json()['fulfillments'] ?? []) as $fulfillment) {
+            $number = (string) ($fulfillment['shipmentTrackingNumber'] ?? '');
+
+            if ($number !== '') {
+                $numbers[] = $number;
+            }
+        }
+
+        return implode(', ', array_unique($numbers));
     }
 
     /** @param list<array{line_item_id: string, quantity: int}> $items */

@@ -24,7 +24,14 @@ final class OpenShipment
         public readonly string $currency,
         public readonly bool $labelled = false,
         public readonly string $country = '',
+        public readonly string $tracking = '',
     ) {
+    }
+
+    /** The same sale with the tracking number eBay holds for it — set when he bought the label there. */
+    public function withTracking(string $tracking): self
+    {
+        return new self($this->orderId, $this->buyer, $this->orderedAt, $this->paid, $this->items, $this->address, $this->service, $this->total, $this->currency, $this->labelled, $this->country, $tracking);
     }
 
     /** @param array<string, mixed> $order a Fulfillment API order; `mixed` because eBay's JSON nests */

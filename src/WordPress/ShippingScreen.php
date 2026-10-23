@@ -20,6 +20,7 @@ final class ShippingScreen
     public const PAGE = 'taxebay-shipping';
     public const SHIP = 'taxebay_ship';
     public const INSERT = 'taxebay_insert';
+    public const PACK = 'taxebay_pack';
 
     /**
      * Label print onto 62 mm tape (assets/label62.js) is parked: his scanner could not read the matrix code from it
@@ -30,8 +31,9 @@ final class ShippingScreen
     /**
      * @param list<OpenShipment>|string $open the sales, or why they could not be read
      * @param list<array{ok: bool, text: string}> $notices
+     * @param array<string, int> $packed order id → when he marked it packed; those parcels hide unless $showPacked
      */
-    public function page(array|string $open, array $notices, string $seller): string
+    public function page(array|string $open, array $notices, string $seller, array $packed = [], bool $showPacked = false): string
     {
         $html = '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
 
@@ -52,15 +54,30 @@ final class ShippingScreen
             return $html . '<p>' . esc_html__('Nothing to ship.', 'taxebay') . '</p></div>';
         }
 
+        $hidden = 0;
+
         foreach (Parcels::of($open) as $parcel) {
-            $html .= $this->card($parcel, $seller);
+            $isPacked = array_reduce($parcel, static fn (bool $all, OpenShipment $sale): bool => $all && isset($packed[$sale->orderId]), true);
+
+            if ($isPacked && ! $showPacked) {
+                ++$hidden;
+                continue;
+            }
+
+            $html .= $this->card($parcel, $seller, $isPacked);
+        }
+
+        if ($hidden > 0 || $showPacked) {
+            $html .= '<p><a href="' . esc_url(admin_url('admin.php?page=' . self::PAGE . ($showPacked ? '' : '&packed=1'))) . '">'
+                /* translators: %d: number of packed parcels */
+                . esc_html($showPacked ? __('Hide packed', 'taxebay') : sprintf(__('Show packed (%d)', 'taxebay'), $hidden)) . '</a></p>';
         }
 
         return $html . '</div>';
     }
 
     /** @param non-empty-list<OpenShipment> $parcel sales to one buyer at one address — one parcel */
-    private function card(array $parcel, string $seller): string
+    private function card(array $parcel, string $seller, bool $isPacked): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
@@ -83,6 +100,7 @@ final class ShippingScreen
             $carriers .= '<option value="' . esc_attr($code) . '">' . esc_html($label) . '</option>';
         }
 
+        $tracking = implode(', ', array_filter(array_map(static fn (OpenShipment $sale): string => $sale->tracking, $parcel)));
         $heading = count($parcel) > 1
             /* translators: %d: number of sales */
             ? sprintf(__('%d sales, one parcel', 'taxebay'), count($parcel))
@@ -111,10 +129,17 @@ final class ShippingScreen
                 . '<button type="button" class="button" data-taxebay-paste="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Paste screenshot → 62 mm', 'taxebay') . '</button> '
                 : '')
             . ($labelled
-                ? '<span class="description">' . esc_html__('Label bought at eBay — eBay already counts it as shipped. Pack it and add the insert.', 'taxebay') . '</span>'
+                ? '<span class="description">' . esc_html__('Label bought at eBay — eBay already counts it as shipped. Pack it and add the insert.', 'taxebay')
+                . ($tracking === '' ? '' : ' ' . esc_html__('Tracking number:', 'taxebay') . ' <code>' . esc_html($tracking) . '</code>') . '</span>'
                 : '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
                 . '<input type="text" name="tracking" class="regular-text" style="width:16em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary', 'submit', false, $paid ? null : ['disabled' => 'disabled']))
+            . '</form>'
+            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin-top:8px">'
+            . '<input type="hidden" name="action" value="' . esc_attr(self::PACK) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
+            . '<input type="hidden" name="packed" value="' . ($isPacked ? '0' : '1') . '">'
+            . wp_nonce_field(self::PACK, '_wpnonce', true, false)
+            . get_submit_button($isPacked ? __('Not packed after all', 'taxebay') : __('Packed', 'taxebay'), 'secondary', 'submit', false)
             . '</form></div>';
     }
 
