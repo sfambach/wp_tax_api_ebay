@@ -5,6 +5,7 @@ namespace TaxEbay\WordPress;
 use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\OAuth\AppKeys;
+use TaxEbay\Core\Shipping\Stages;
 use Taxmod\Core\Import\SecretBox;
 use Taxmod\WordPress\Import\Vault;
 
@@ -19,7 +20,8 @@ final class Settings
     public const KEYS = 'taxmod_ebay_keys';
     public const SCHEDULE = 'taxmod_ebay_schedule';
     public const INSERT_FORMAT = 'taxmod_ebay_insert_format';
-    public const PACKED = 'taxmod_ebay_packed';
+    public const STAGES = 'taxmod_ebay_stages';
+    private const PACKED_BEFORE_STAGES = 'taxmod_ebay_packed';
     public const INSERT_A6 = 'a6';
     public const INSERT_LABEL = 'label62';
 
@@ -168,33 +170,43 @@ final class Settings
         update_option(self::INSERT_FORMAT, $format === self::INSERT_LABEL ? self::INSERT_LABEL : self::INSERT_A6, false);
     }
 
-    /** A packed parcel is remembered this long; eBay drops it from the shipping list well before. */
-    private const PACKED_DAYS = 30;
+    /** A stage note is kept this long; the shipping page reads eBay only that far back (D-985). */
+    public const STAGE_DAYS = 30;
 
-    /** @return array<string, int> order id → when he marked it packed */
-    public static function packed(): array
+    /** @return array<string, array{stage: string, at: int}> order id → his note */
+    public static function stages(): array
     {
-        $packed = get_option(self::PACKED, []);
+        $stages = [];
 
-        return is_array($packed) ? array_map('intval', $packed) : [];
-    }
-
-    /** @param list<string> $orderIds */
-    public static function markPacked(array $orderIds, int $now): void
-    {
-        $kept = array_filter(self::packed(), static fn (int $at): bool => $at > $now - self::PACKED_DAYS * 86400);
-
-        foreach ($orderIds as $orderId) {
-            $kept[$orderId] = $now;
+        foreach ((array) get_option(self::STAGES, []) as $orderId => $note) {
+            if (is_array($note) && isset($note['stage'], $note['at'])) {
+                $stages[(string) $orderId] = ['stage' => (string) $note['stage'], 'at' => (int) $note['at']];
+            }
         }
 
-        update_option(self::PACKED, $kept, false);
+        // 0.0.40 kept only «packed», as order id → time.
+        foreach ((array) get_option(self::PACKED_BEFORE_STAGES, []) as $orderId => $at) {
+            $stages[(string) $orderId] ??= ['stage' => Stages::PACKED, 'at' => (int) $at];
+        }
+
+        return $stages;
     }
 
     /** @param list<string> $orderIds */
-    public static function unmarkPacked(array $orderIds): void
+    public static function saveStage(array $orderIds, string $stage, int $now): void
     {
-        update_option(self::PACKED, array_diff_key(self::packed(), array_flip($orderIds)), false);
+        $kept = array_filter(self::stages(), static fn (array $note): bool => $note['at'] > $now - self::STAGE_DAYS * 86400);
+
+        foreach ($orderIds as $orderId) {
+            if ($stage === Stages::OPEN) {
+                unset($kept[$orderId]);
+            } else {
+                $kept[$orderId] = ['stage' => $stage, 'at' => $now];
+            }
+        }
+
+        update_option(self::STAGES, $kept, false);
+        delete_option(self::PACKED_BEFORE_STAGES);
     }
 
     /** «Delete access data» (D-981): the app keys go too; constants in wp-config.php stay, they are his file. */

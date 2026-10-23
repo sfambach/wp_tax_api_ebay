@@ -12,7 +12,9 @@ use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
 use TaxEbay\Core\Shipping\OpenShipment;
+use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
+use TaxEbay\Core\Shipping\Stages;
 
 /**
  * The boundary: menu, connect, the OAuth return, the connection test. It wires WordPress to the core and decides nothing.
@@ -21,7 +23,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.40';
+    public const VERSION    = '0.0.41';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -48,7 +50,7 @@ final class Plugin
         add_action('admin_menu', $plugin->registerShippingPage(...), 21);
         add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
         add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
-        add_action('admin_post_taxebay_pack', $plugin->handlePack(...));
+        add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
     }
 
     /**
@@ -245,13 +247,16 @@ final class Plugin
         $parent = isset($GLOBALS['admin_page_hooks']['taxmod']) ? 'taxmod' : 'tools.php';
 
         $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
+            $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : Stages::OPEN;
+            $stages = Settings::stages();
+
             try {
-                $open = self::shippingClient()->open(self::accessToken(), self::labelledSince());
+                $open = self::shownWithTracking(self::accessToken(), $tab, $stages);
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), Settings::packed(), isset($_GET['packed']));
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time());
         });
 
         if ($hook !== false && ShippingScreen::LABEL_PRINT) {
@@ -302,6 +307,7 @@ final class Plugin
 
             foreach ($sales as $sale) {
                 $client->markShipped($token, $sale->orderId, $sale->items, $carrier, $tracking, gmdate('Y-m-d\TH:i:s.000\Z'));
+                Settings::saveStage([$sale->orderId], Stages::SHIPPED, time());
                 /* translators: %s: eBay order number */
                 $this->notice(true, sprintf(__('%s reported as shipped.', 'taxebay'), $sale->orderId));
             }
@@ -313,21 +319,18 @@ final class Plugin
         exit;
     }
 
-    /** «Packed»: the parcel leaves the list; eBay knows nothing of it, it is his note only. */
-    public function handlePack(): void
+    /** A parcel moves one tab on or back (D-985); eBay knows nothing of it, it is his note only. */
+    public function handleStage(): void
     {
-        $this->guard(ShippingScreen::PACK);
+        $this->guard(ShippingScreen::STAGE);
         $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        $stage = isset($_POST['stage']) ? sanitize_key(wp_unslash($_POST['stage'])) : '';
 
-        if (isset($_POST['packed']) && sanitize_key(wp_unslash($_POST['packed'])) === '0') {
-            Settings::unmarkPacked($orders);
-        } else {
-            Settings::markPacked($orders, time());
-            /* translators: %s: eBay order numbers */
-            $this->notice(true, sprintf(__('%s marked as packed.', 'taxebay'), implode(', ', $orders)));
+        if (in_array($stage, Stages::ALL, true) && $orders !== []) {
+            Settings::saveStage($orders, $stage, time());
         }
 
-        wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
         exit;
     }
 
@@ -369,10 +372,36 @@ final class Plugin
         return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
     }
 
-    /** Labels bought at eBay in the last three days still show, for packing and the insert. */
+    /** Orders eBay counts as shipped stay readable as long as his stage notes last (D-985). */
     private static function labelledSince(): string
     {
-        return gmdate('Y-m-d\\TH:i:s.000\\Z', time() - 3 * DAY_IN_SECONDS);
+        return gmdate('Y-m-d\\TH:i:s.000\\Z', time() - Settings::STAGE_DAYS * DAY_IN_SECONDS);
+    }
+
+    /**
+     * All sales for the tab counts; tracking numbers only for the parcels of the tab he looks at — one call each.
+     *
+     * @param array<string, array{stage: string, at: int}> $stages
+     * @return list<OpenShipment>
+     */
+    private static function shownWithTracking(string $token, string $tab, array $stages): array
+    {
+        $client = self::shippingClient();
+        $open = $client->open($token, self::labelledSince());
+        $shown = [];
+
+        foreach (Parcels::of($open) as $parcel) {
+            if (Stages::of($parcel, $stages, time()) === $tab) {
+                foreach ($parcel as $sale) {
+                    $shown[$sale->orderId] = true;
+                }
+            }
+        }
+
+        $tracked = $client->tracked($token, array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId]))));
+        $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
+
+        return array_map(static fn (OpenShipment $sale): OpenShipment => $byId[$sale->orderId] ?? $sale, $open);
     }
 
     private static function shippingClient(): ShippingClient

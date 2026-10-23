@@ -27,8 +27,8 @@ final class ShippingClient
     }
 
     /**
-     * Not shipped yet, plus — when `$labelledSince` is given — orders he bought the eBay label for since then: eBay
-     * counts those as shipped, but the parcel still needs packing and its insert.
+     * Not shipped yet, plus — when `$labelledSince` is given — orders eBay counts as shipped that changed since then:
+     * labels he bought at eBay, and parcels further down his stages (D-985).
      *
      * @param string|null $labelledSince ISO 8601 UTC
      * @return list<OpenShipment> oldest first
@@ -40,8 +40,7 @@ final class ShippingClient
         if ($labelledSince !== null) {
             // eBay accepts only {NOT_STARTED|IN_PROGRESS} or {FULFILLED|IN_PROGRESS}; IN_PROGRESS came with the first read.
             $recent = $this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED|IN_PROGRESS}');
-            $labelled = array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled);
-            $open = [...$open, ...array_map(fn (OpenShipment $sale): OpenShipment => $sale->withTracking($this->tracking($accessToken, $sale->orderId)), $labelled)];
+            $open = [...$open, ...array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled)];
         }
 
         usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
@@ -80,6 +79,17 @@ final class ShippingClient
         }
 
         return $found;
+    }
+
+    /**
+     * The same sales, the labelled ones with the tracking numbers eBay holds — only for those he will see: one call each.
+     *
+     * @param list<OpenShipment> $sales
+     * @return list<OpenShipment>
+     */
+    public function tracked(string $accessToken, array $sales): array
+    {
+        return array_map(fn (OpenShipment $sale): OpenShipment => $sale->labelled ? $sale->withTracking($this->tracking($accessToken, $sale->orderId)) : $sale, $sales);
     }
 
     /**

@@ -10,6 +10,7 @@ use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
+use TaxEbay\Core\Shipping\Stages;
 
 /** The order follows eBay's documented Fulfillment answer, not a measured one. */
 final class ShippingTest extends TestCase
@@ -81,13 +82,33 @@ final class ShippingTest extends TestCase
         $labelled['orderFulfillmentStatus'] = 'FULFILLED';
         $http = new ScriptedTransport([new HttpResponse(200, '{"orders":[]}'), new HttpResponse(200, (string) json_encode(['orders' => [$labelled, self::order('P', '2026-10-22')]])), new HttpResponse(200, '{"fulfillments":[{"shipmentTrackingNumber":"00340434"}]}')]);
 
-        $open = (new ShippingClient(Environment::Production, $http))->open('token', '2026-10-20T00:00:00.000Z');
+        $client = new ShippingClient(Environment::Production, $http);
+        $open = $client->tracked('token', $client->open('token', '2026-10-20T00:00:00.000Z'));
 
         self::assertCount(1, $open);
         self::assertTrue($open[0]->labelled);
         self::assertStringContainsString('orderfulfillmentstatus%3A%7BFULFILLED%7CIN_PROGRESS%7D', $http->sent[1]->url);
         self::assertSame('00340434', $open[0]->tracking);
         self::assertStringEndsWith('/order/L/shipping_fulfillment', $http->sent[2]->url);
+    }
+
+    public function testParcelsMoveThroughHisStages(): void
+    {
+        $now = (int) strtotime('2026-10-23T12:00:00Z');
+        $fresh = self::order('F', '2026-10-22');
+        $fresh['orderFulfillmentStatus'] = 'FULFILLED';
+        $fresh['lastModifiedDate'] = '2026-10-22T10:00:00.000Z';
+        $old = $fresh;
+        $old['orderId'] = 'O';
+        $old['lastModifiedDate'] = '2026-10-10T10:00:00.000Z';
+
+        self::assertSame(Stages::OPEN, Stages::of([OpenShipment::fromOrder(self::order('N', '2026-10-01'))], [], $now));
+        self::assertSame(Stages::OPEN, Stages::of([OpenShipment::fromOrder($fresh)], [], $now));
+        self::assertNull(Stages::of([OpenShipment::fromOrder($old)], [], $now));
+        self::assertSame(Stages::RECEIVED, Stages::of([OpenShipment::fromOrder($old)], ['O' => ['stage' => Stages::RECEIVED, 'at' => $now]], $now));
+        self::assertSame(Stages::SHIPPED, Stages::next(Stages::PACKED));
+        self::assertNull(Stages::next(Stages::RECEIVED));
+        self::assertNull(Stages::previous(Stages::OPEN));
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void
