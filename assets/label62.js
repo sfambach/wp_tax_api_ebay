@@ -98,6 +98,17 @@
 		}
 
 		context.drawImage(canvas, left, top, width, height, 0, 0, width, height);
+		context.setTransform(1, 0, 0, 1, 0, 0);
+		// Pure black and white: grey edges are dithered by the thermal printer and blur the matrix code.
+		var image = context.getImageData(0, 0, out.width, out.height);
+
+		for (var k = 0; k < image.data.length; k += 4) {
+			var value = image.data[k] + image.data[k + 1] + image.data[k + 2] < 540 ? 0 : 255;
+			image.data[k] = image.data[k + 1] = image.data[k + 2] = value;
+			image.data[k + 3] = 255;
+		}
+
+		context.putImageData(image, 0, 0);
 		out.upright = upright;
 		return out;
 	}
@@ -151,8 +162,6 @@
 		var size = Math.round(Math.min(label.width, label.height) * 0.035);
 		var margin = Math.round(size * 0.6);
 		context.save();
-		// crop() left its turn on this context.
-		context.setTransform(1, 0, 0, 1, 0, 0);
 		context.fillStyle = '#000';
 		context.font = size + 'px sans-serif';
 		context.textAlign = 'right';
@@ -184,7 +193,7 @@
 		doc.write('<!doctype html><html><head><meta charset="utf-8"><style>'
 			+ '@page{size:' + TAPE_MM + 'mm ' + PAGE_MM + 'mm;margin:0}'
 			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:4.5mm 2mm}section+section{break-before:page}'
-			+ 'img{display:block;margin:0 auto}</style></head><body>' + body + '</body></html>');
+			+ 'img{display:block;margin:0 auto;image-rendering:pixelated}</style></head><body>' + body + '</body></html>');
 		doc.close();
 
 		var images = Array.prototype.slice.call(doc.images);
