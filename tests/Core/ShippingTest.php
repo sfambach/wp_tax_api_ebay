@@ -9,6 +9,7 @@ use TaxEbay\Core\Api\HttpResponse;
 use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
+use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
 
@@ -109,6 +110,24 @@ final class ShippingTest extends TestCase
         self::assertSame(Stages::SHIPPED, Stages::next(Stages::PACKED));
         self::assertNull(Stages::next(Stages::RECEIVED));
         self::assertNull(Stages::previous(Stages::OPEN));
+    }
+
+    public function testSearchFilterAndSortLikeAWordPressList(): void
+    {
+        $cheap = self::order('A', '2026-10-20');
+        $cheap['pricingSummary']['total'] = ['value' => '2.90', 'currency' => 'EUR'];
+        $dear = self::order('B', '2026-10-21');
+        $dear['pricingSummary']['total'] = ['value' => '12.80', 'currency' => 'EUR'];
+        $dear['orderFulfillmentStatus'] = 'FULFILLED';
+        $parcels = [[OpenShipment::fromOrder($cheap)], [OpenShipment::fromOrder($dear)->withTracking('00340434')]];
+        $ids = static fn (array $list): array => array_map(static fn (array $parcel): string => $parcel[0]->orderId, $list);
+
+        self::assertSame(['A', 'B'], $ids((new ParcelList())->apply($parcels)));
+        self::assertSame(['B', 'A'], $ids((new ParcelList('', '', '', 'total', true))->apply($parcels)));
+        self::assertSame(['B'], $ids((new ParcelList('0340'))->apply($parcels)));
+        self::assertSame(['B'], $ids((new ParcelList('', ParcelList::LABEL_EBAY))->apply($parcels)));
+        self::assertSame(['A'], $ids((new ParcelList('', ParcelList::LABEL_OWN))->apply($parcels)));
+        self::assertSame([], $ids((new ParcelList('nothing like it'))->apply($parcels)));
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void

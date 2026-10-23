@@ -12,6 +12,7 @@ use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
 use TaxEbay\Core\Shipping\OpenShipment;
+use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
@@ -23,7 +24,7 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.41';
+    public const VERSION    = '0.0.42';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -248,15 +249,23 @@ final class Plugin
 
         $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
             $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : Stages::OPEN;
+            $orderBy = isset($_GET['orderby']) ? sanitize_key(wp_unslash($_GET['orderby'])) : 'date';
+            $list = new ParcelList(
+                isset($_GET['s']) ? sanitize_text_field(wp_unslash($_GET['s'])) : '',
+                isset($_GET['label']) ? sanitize_key(wp_unslash($_GET['label'])) : '',
+                isset($_GET['paid']) ? sanitize_key(wp_unslash($_GET['paid'])) : '',
+                in_array($orderBy, ParcelList::ORDER_BY, true) ? $orderBy : 'date',
+                isset($_GET['order']) && sanitize_key(wp_unslash($_GET['order'])) === 'desc',
+            );
             $stages = Settings::stages();
 
             try {
-                $open = self::shownWithTracking(self::accessToken(), $tab, $stages);
+                $open = self::shownWithTracking(self::accessToken(), $tab, $stages, $list);
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time());
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list);
         });
 
         if ($hook !== false && ShippingScreen::LABEL_PRINT) {
@@ -323,15 +332,54 @@ final class Plugin
     public function handleStage(): void
     {
         $this->guard(ShippingScreen::STAGE);
-        $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        // One parcel sends a comma list; the bulk form sends one per ticked row.
+        $posted = isset($_POST['orders']) ? wp_unslash($_POST['orders']) : '';
+        $orders = self::orderIds(implode(',', array_map('sanitize_text_field', is_array($posted) ? $posted : [$posted])));
         $stage = isset($_POST['stage']) ? sanitize_key(wp_unslash($_POST['stage'])) : '';
 
-        if (in_array($stage, Stages::ALL, true) && $orders !== []) {
+        if (! in_array($stage, Stages::ALL, true) || $orders === []) {
+            $this->notice(false, __('Pick an action and at least one parcel.', 'taxebay'));
+        } else {
+            if ($stage === Stages::SHIPPED || $stage === Stages::RECEIVED) {
+                $orders = $this->onlyLabelled($orders);
+            }
+
             Settings::saveStage($orders, $stage, time());
         }
 
         wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
         exit;
+    }
+
+    /**
+     * Without an eBay label, eBay learns of the parcel only from «Mark shipped»; a bulk move past it would skip that.
+     *
+     * @param list<string> $orderIds
+     * @return list<string>
+     */
+    private function onlyLabelled(array $orderIds): array
+    {
+        try {
+            $sales = self::openSales($orderIds);
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            $this->notice(false, $failure->getMessage());
+
+            return [];
+        }
+
+        $stages = Settings::stages();
+        $kept = array_values(array_map(static fn (OpenShipment $sale): string => $sale->orderId, array_filter(
+            $sales,
+            static fn (OpenShipment $sale): bool => $sale->labelled || in_array($stages[$sale->orderId]['stage'] ?? '', [Stages::SHIPPED, Stages::RECEIVED], true)
+        )));
+        $skipped = array_diff($orderIds, $kept);
+
+        if ($skipped !== []) {
+            /* translators: %s: eBay order numbers */
+            $this->notice(false, sprintf(__('%s skipped: no eBay label — report the tracking number with «Mark shipped» first.', 'taxebay'), implode(', ', $skipped)));
+        }
+
+        return $kept;
     }
 
     public function handleInsert(): void
@@ -384,17 +432,17 @@ final class Plugin
      * @param array<string, array{stage: string, at: int}> $stages
      * @return list<OpenShipment>
      */
-    private static function shownWithTracking(string $token, string $tab, array $stages): array
+    private static function shownWithTracking(string $token, string $tab, array $stages, ParcelList $list): array
     {
         $client = self::shippingClient();
         $open = $client->open($token, self::labelledSince());
         $shown = [];
+        $inTab = array_values(array_filter(Parcels::of($open), static fn (array $parcel): bool => Stages::of($parcel, $stages, time()) === $tab));
 
-        foreach (Parcels::of($open) as $parcel) {
-            if (Stages::of($parcel, $stages, time()) === $tab) {
-                foreach ($parcel as $sale) {
-                    $shown[$sale->orderId] = true;
-                }
+        // The search reads tracking numbers too, so filters other than the search decide which parcels get them.
+        foreach ((new ParcelList('', $list->label, $list->paid))->apply($inTab) as $parcel) {
+            foreach ($parcel as $sale) {
+                $shown[$sale->orderId] = true;
             }
         }
 
