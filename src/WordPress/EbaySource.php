@@ -33,7 +33,8 @@ final class EbaySource implements FetchingSource
 
     public function interval(): int
     {
-        return Settings::fetchInterval();
+        // 0 = not ready: without a connection the schedule stays off, whatever interval he chose (D-981).
+        return Settings::connection() === null ? 0 : Settings::fetchInterval();
     }
 
     /** Failures are thrown: the inbox records the message and shows it. */

@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.18';
+    public const VERSION    = '0.0.19';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -65,6 +65,21 @@ final class Plugin
             'guide'  => static fn (): string => (new SettingsScreen())->guide(),
             'version' => self::VERSION,
         ];
+
+        // The shared layout of D-981: the modeller draws access, fetch interval and settings in that order.
+        if (SettingsScreen::sharedLayout()) {
+            $tabs['ebay'] = [
+                ...$tabs['ebay'],
+                'credentials' => fn (): string => (new SettingsScreen())->credentials($this->takeNotices()),
+                'test'        => static fn (): string => self::testConnection(),
+                'forget'      => static function (): void {
+                    Settings::forget();
+                    Settings::forgetKeys();
+                },
+                'source'      => 'ebay',
+                'render'      => static fn (): string => (new SettingsScreen())->settings(),
+            ];
+        }
 
         return $tabs;
     }
@@ -154,26 +169,32 @@ final class Plugin
 
     public function handleCheck(): void
     {
-        $keys = $this->keysOrBack('taxebay_check');
+        $this->keysOrBack('taxebay_check');
+        $result = self::testConnection();
+        $this->notice(str_starts_with($result, '✓'), $result);
+        $this->back();
+    }
+
+    /** One sentence for the modeller's «Test connection» (D-981) and the old link: who eBay says this site is. */
+    public static function testConnection(): string
+    {
+        $keys = Settings::appKeys();
         $connection = Settings::connection();
 
-        if ($connection === null) {
-            $this->notice(false, __('Not connected yet.', 'taxebay'));
-            $this->back();
+        if ($keys === null || $connection === null) {
+            return __('Not connected yet: save the keys, then «Connect to eBay».', 'taxebay');
         }
 
         try {
             $http = WpHttpTransport::budgeted();
             $tokens = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time());
-            $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
+
             /* translators: %s: eBay user name */
-            $this->notice(true, sprintf(__('Connection works: eBay knows this site as %s.', 'taxebay'), $username));
+            return sprintf(__('✓ Connection works: eBay knows this site as %s.', 'taxebay'), (new IdentityClient($keys->environment, $http))->username($tokens->accessToken));
         } catch (EbayApiException | SecretDoesNotOpen $failure) {
             /* translators: %s: reason */
-            $this->notice(false, sprintf(__('Connection test failed: %s', 'taxebay'), $failure->getMessage()));
+            return sprintf(__('Connection test failed: %s', 'taxebay'), $failure->getMessage());
         }
-
-        $this->back();
     }
 
     /**
@@ -321,7 +342,10 @@ final class Plugin
     private static function saveKeys(array $post): bool
     {
         $field = static fn (string $name): string => is_string($post[$name] ?? null) ? trim(sanitize_text_field($post[$name])) : '';
-        Settings::saveSchedule(sanitize_key($field('taxebay_schedule')));
+        // Under the shared layout the modeller stores the interval; an absent field must not switch fetching off.
+        if (isset($post['taxebay_schedule'])) {
+            Settings::saveSchedule(sanitize_key($field('taxebay_schedule')));
+        }
 
         if (Settings::keysFromConstants() !== null) {
             return true;

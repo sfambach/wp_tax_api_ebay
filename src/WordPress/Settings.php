@@ -153,6 +153,12 @@ final class Settings
         return is_array($stored) && ($stored['scopes'] ?? '') !== \TaxEbay\Core\OAuth\Scopes::asString();
     }
 
+    /** «Delete access data» (D-981): the app keys go too; constants in wp-config.php stay, they are his file. */
+    public static function forgetKeys(): void
+    {
+        delete_option(self::KEYS);
+    }
+
     public static function forget(): void
     {
         delete_option(self::CONNECTION);
