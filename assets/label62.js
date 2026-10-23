@@ -9,6 +9,10 @@
 	var TAPE_MM = 62;
 	// The QL-810W cannot print the outer 1.5 mm of the tape; 3 mm keep clear of it.
 	var PRINT_MM = 56;
+	// The Brother driver's paper for endless 62 mm tape is 62 × 100 mm; a longer page is shrunk by the browser to fit
+	// it (the first prints came out at half width). So the label fits into one such page.
+	var PAGE_MM = 100;
+	var FREE_MM = PAGE_MM - 6 - 5;
 	var DPI = 300;
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = taxebayLabel.worker;
@@ -134,18 +138,16 @@
 		document.body.appendChild(frame);
 		var doc = frame.contentDocument;
 		var body = '';
-		var longest = 0;
-
 		pages.forEach(function (label) {
-			longest = Math.max(longest, PRINT_MM * label.height / label.width);
-			body += '<section><img src="' + label.toDataURL('image/png') + '" alt=""><p></p></section>';
+			var width = Math.min(PRINT_MM, FREE_MM * label.width / label.height);
+			body += '<section><img style="width:' + width.toFixed(1) + 'mm" src="' + label.toDataURL('image/png') + '" alt=""><p></p></section>';
 		});
 
 		doc.open();
 		doc.write('<!doctype html><html><head><meta charset="utf-8"><style>'
-			+ '@page{size:' + TAPE_MM + 'mm ' + Math.ceil(longest + 12) + 'mm;margin:0}'
+			+ '@page{size:' + TAPE_MM + 'mm ' + PAGE_MM + 'mm;margin:0}'
 			+ 'body{margin:0;font:7pt/1.2 sans-serif}section{padding:3mm}section+section{break-before:page}'
-			+ 'img{display:block;width:' + PRINT_MM + 'mm}p{margin:1mm 0 0}</style></head><body>' + body + '</body></html>');
+			+ 'img{display:block;margin:0 auto}p{margin:1mm 0 0;text-align:center}</style></head><body>' + body + '</body></html>');
 		doc.close();
 		doc.querySelectorAll('p').forEach(function (line) { line.textContent = caption; });
 
