@@ -21,7 +21,7 @@ use TaxEbay\Core\Shipping\ShippingClient;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.20';
+    public const VERSION    = '0.0.21';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -245,7 +245,7 @@ final class Plugin
 
         add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
             try {
-                $open = self::shippingClient()->open(self::accessToken());
+                $open = self::shippingClient()->open(self::accessToken(), self::labelledSince());
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
@@ -319,7 +319,13 @@ final class Plugin
      */
     private static function openSales(array $orderIds): array
     {
-        return array_values(array_filter(self::shippingClient()->open(self::accessToken()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
+        return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
+    }
+
+    /** Labels bought at eBay in the last three days still show, for packing and the insert. */
+    private static function labelledSince(): string
+    {
+        return gmdate('Y-m-d\\TH:i:s.000\\Z', time() - 3 * DAY_IN_SECONDS);
     }
 
     private static function shippingClient(): ShippingClient

@@ -26,14 +26,34 @@ final class ShippingClient
     ) {
     }
 
-    /** @return list<OpenShipment> oldest first */
-    public function open(string $accessToken): array
+    /**
+     * Not shipped yet, plus — when `$labelledSince` is given — orders he bought the eBay label for since then: eBay
+     * counts those as shipped, but the parcel still needs packing and its insert.
+     *
+     * @param string|null $labelledSince ISO 8601 UTC
+     * @return list<OpenShipment> oldest first
+     */
+    public function open(string $accessToken, ?string $labelledSince = null): array
+    {
+        $open = $this->read($accessToken, 'orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}');
+
+        if ($labelledSince !== null) {
+            $open = [...$open, ...$this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED}')];
+        }
+
+        usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
+
+        return $open;
+    }
+
+    /** @return list<OpenShipment> */
+    private function read(string $accessToken, string $filter): array
     {
         $url = $this->environment->apiHost() . '/sell/fulfillment/v1/order?' . http_build_query([
-            'filter' => 'orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}',
+            'filter' => $filter,
             'limit'  => self::PAGE_SIZE,
         ], '', '&', PHP_QUERY_RFC3986);
-        $open = [];
+        $found = [];
         $pages = 0;
 
         while ($url !== '' && $pages++ < self::MAX_PAGES) {
@@ -50,15 +70,13 @@ final class ShippingClient
                     continue;
                 }
 
-                $open[] = OpenShipment::fromOrder($order);
+                $found[] = OpenShipment::fromOrder($order);
             }
 
             $url = (string) ($page['next'] ?? '');
         }
 
-        usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
-
-        return $open;
+        return $found;
     }
 
     /** @param list<array{line_item_id: string, quantity: int}> $items */

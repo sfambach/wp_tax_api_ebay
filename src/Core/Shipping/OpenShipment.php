@@ -22,12 +22,15 @@ final class OpenShipment
         public readonly string $service,
         public readonly ?string $total,
         public readonly string $currency,
+        public readonly bool $labelled = false,
     ) {
     }
 
     /** @param array<string, mixed> $order a Fulfillment API order; `mixed` because eBay's JSON nests */
     public static function fromOrder(array $order): self
     {
+        // eBay marks an order shipped as soon as he buys the label there; it still has to be packed.
+        $labelled = ($order['orderFulfillmentStatus'] ?? '') === 'FULFILLED';
         $items = [];
 
         foreach ((array) ($order['lineItems'] ?? []) as $line) {
@@ -61,6 +64,7 @@ final class OpenShipment
             (string) ($step['shippingServiceCode'] ?? ''),
             isset($total['value']) ? (string) $total['value'] : null,
             (string) ($total['currency'] ?? 'EUR'),
+            $labelled,
         );
     }
 }

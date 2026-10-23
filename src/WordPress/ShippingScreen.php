@@ -58,6 +58,7 @@ final class ShippingScreen
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
         $paid = array_reduce($parcel, static fn (bool $all, OpenShipment $sale): bool => $all && $sale->paid, true);
+        $labelled = array_reduce($parcel, static fn (bool $all, OpenShipment $sale): bool => $all && $sale->labelled, true);
         $items = '';
         $lines = [];
 
@@ -94,9 +95,11 @@ final class ShippingScreen
             . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr(implode(',', $ids)) . '">'
             . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
             . '<a class="button" target="_blank" rel="noopener" href="' . esc_url($insert) . '">' . esc_html__('Print insert', 'taxebay') . '</a> '
-            . '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
-            . '<input type="text" name="tracking" class="regular-text" style="width:16em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
-            . get_submit_button(__('Mark shipped', 'taxebay'), 'primary', 'submit', false, $paid ? null : ['disabled' => 'disabled'])
+            . ($labelled
+                ? '<span class="description">' . esc_html__('Label bought at eBay — eBay already counts it as shipped. Pack it and add the insert.', 'taxebay') . '</span>'
+                : '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
+                . '<input type="text" name="tracking" class="regular-text" style="width:16em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
+                . get_submit_button(__('Mark shipped', 'taxebay'), 'primary', 'submit', false, $paid ? null : ['disabled' => 'disabled']))
             . '</form></div>';
     }
 

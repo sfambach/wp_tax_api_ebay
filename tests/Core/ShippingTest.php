@@ -73,4 +73,17 @@ final class ShippingTest extends TestCase
 
         self::assertSame([['A', 'B'], ['C']], array_map(static fn (array $parcel): array => array_map(static fn ($sale): string => $sale->orderId, $parcel), $parcels));
     }
+
+    public function testLabelsBoughtAtEbayStillShowForPacking(): void
+    {
+        $labelled = self::order('L', '2026-10-22');
+        $labelled['orderFulfillmentStatus'] = 'FULFILLED';
+        $http = new ScriptedTransport([new HttpResponse(200, '{"orders":[]}'), new HttpResponse(200, (string) json_encode(['orders' => [$labelled]]))]);
+
+        $open = (new ShippingClient(Environment::Production, $http))->open('token', '2026-10-20T00:00:00.000Z');
+
+        self::assertCount(1, $open);
+        self::assertTrue($open[0]->labelled);
+        self::assertStringContainsString('orderfulfillmentstatus%3A%7BFULFILLED%7D', $http->sent[1]->url);
+    }
 }
