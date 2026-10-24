@@ -2,13 +2,18 @@
 
 namespace TaxEbay\WordPress;
 
+use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Notification\AccountDeletion;
+use TaxEbay\Core\Notification\NotificationSignature;
+use TaxEbay\Core\Notification\PublicKeyClient;
+use TaxEbay\Core\OAuth\TokenClient;
 use WP_REST_Request;
 use WP_REST_Response;
 
 /**
  * The public REST route eBay calls for Marketplace Account Deletion. It must be reachable without login — eBay is
- * the caller — so it reads nothing of the model and writes only a short log he sees in the eBay tab.
+ * the caller — so it reads nothing of the model and writes only a short log he sees in the eBay tab. A notification
+ * counts only when eBay's signature holds; anything else is answered 412 and leaves no line.
  */
 final class AccountDeletionEndpoint
 {
@@ -16,7 +21,9 @@ final class AccountDeletionEndpoint
     public const ROUTE = '/account-deletion';
     public const TOKEN = 'taxmod_ebay_deletion_token';
     public const LOG = 'taxmod_ebay_deletion_log';
+    public const PROBLEM = 'taxmod_ebay_deletion_problem';
     private const LOG_SIZE = 50;
+    private const KEY_CACHE = 'taxmod_ebay_notification_key_';
 
     public static function register(): void
     {
@@ -71,7 +78,34 @@ final class AccountDeletionEndpoint
 
     private static function notification(WP_REST_Request $request): WP_REST_Response
     {
-        $deleted = AccountDeletion::deletedAccount((array) $request->get_json_params());
+        $body = $request->get_body();
+        $signature = NotificationSignature::fromHeader((string) $request->get_header('x_ebay_signature'));
+
+        if ($signature === null) {
+            return new WP_REST_Response(null, 412);
+        }
+
+        try {
+            $signed = $signature->signs($body, self::publicKey($signature->keyId));
+        } catch (EbayApiException $failure) {
+            // eBay retries a notification that was not taken; a forged one fails the same way and costs one budgeted call.
+            update_option(self::PROBLEM, current_time('mysql') . ' — ' . $failure->getMessage(), false);
+
+            return new WP_REST_Response(null, 503);
+        }
+
+        if ($signed === null) {
+            update_option(self::PROBLEM, current_time('mysql') . ' — ' . __('This server cannot check ECDSA/SHA-1 signatures (OpenSSL).', 'taxebay'), false);
+
+            return new WP_REST_Response(null, 503);
+        }
+
+        if (! $signed) {
+            return new WP_REST_Response(null, 412);
+        }
+
+        delete_option(self::PROBLEM);
+        $deleted = AccountDeletion::deletedAccount((array) json_decode($body, true));
 
         if ($deleted !== null) {
             $entry = [
@@ -83,5 +117,23 @@ final class AccountDeletionEndpoint
         }
 
         return new WP_REST_Response(null, 204);
+    }
+
+    /** eBay's keys change rarely; one read per key id and day. */
+    private static function publicKey(string $keyId): string
+    {
+        $cached = get_transient(self::KEY_CACHE . $keyId);
+
+        if (is_string($cached) && $cached !== '') {
+            return $cached;
+        }
+
+        $keys = Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay'));
+        $http = WpHttpTransport::budgeted();
+        $token = (new TokenClient($keys, $http))->applicationToken(time())->accessToken;
+        $key = (new PublicKeyClient($keys->environment, $http))->key($token, $keyId);
+        set_transient(self::KEY_CACHE . $keyId, $key, DAY_IN_SECONDS);
+
+        return $key;
     }
 }

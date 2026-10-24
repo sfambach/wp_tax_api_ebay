@@ -39,7 +39,9 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 
 The refresh token is stored sealed (libsodium) with a key derived from the auth salt in `wp-config.php`; changing that
 salt means connecting again. Production keysets also need the *Marketplace account deletion* notification settled in
-the developer portal; this module stores only the eBay user name, so the exemption applies (D-943).
+the developer portal; this module stores only the eBay user name, so the exemption applies (D-943). The endpoint
+accepts a notification only when eBay's `X-EBAY-SIGNATURE` verifies (ECDSA, public key from the Notification API);
+anything else gets HTTP 412 and leaves no trace.
 
 ## License
 

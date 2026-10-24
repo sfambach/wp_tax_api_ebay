@@ -148,6 +148,16 @@ final class SettingsScreen
             . $this->urlRow(__('Notification endpoint', 'taxebay'), AccountDeletionEndpoint::url())
             . $this->urlRow(__('Verification token', 'taxebay'), AccountDeletionEndpoint::token())
             . '</tbody></table>';
+        $problem = (string) get_option(AccountDeletionEndpoint::PROBLEM, '');
+
+        if ($problem !== '') {
+            $html .= '<p class="notice notice-warning inline">' . esc_html(sprintf(
+                /* translators: %s: time and reason */
+                __('The last notification from eBay could not be checked: %s', 'taxebay'),
+                $problem
+            )) . '</p>';
+        }
+
         $log = AccountDeletionEndpoint::log();
 
         if ($log !== []) {

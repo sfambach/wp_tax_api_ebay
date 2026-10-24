@@ -60,6 +60,15 @@ final class TokenClient
         ], 'Refreshing the access token', $now);
     }
 
+    /** A token for the app itself, not for him — the Notification API's public key asks for no consent. */
+    public function applicationToken(int $now): Tokens
+    {
+        return $this->request([
+            'grant_type' => 'client_credentials',
+            'scope'      => 'https://api.ebay.com/oauth/api_scope',
+        ], 'Requesting an application token', $now);
+    }
+
     /** @param array<string, string> $form */
     private function request(array $form, string $what, int $now): Tokens
     {

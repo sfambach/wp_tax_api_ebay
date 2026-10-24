@@ -9,11 +9,11 @@ namespace TaxEbay\Core\Notification;
  * ```mermaid
  * flowchart LR
  *   G["GET ?challenge_code=c"] --> H["sha256(c + token + endpoint)"] --> J["{challengeResponse}"]
- *   P["POST notification"] --> U["username, userId"] --> L["log for him: remove from the model"]
+ *   P["POST notification, signature checked"] --> U["username, userId"] --> L["log for him: remove from the model"]
  * ```
  *
- * ⚠️ Follows eBay's documentation; not measured. The POST's signature is not checked — a forged one only adds a line
- * to the log, it never changes data.
+ * ⚠️ Follows eBay's documentation; not measured. The POST counts only with a valid signature
+ * ({@see NotificationSignature}): the log asks him to remove a buyer from the model, so a forged line would do harm.
  */
 final class AccountDeletion
 {

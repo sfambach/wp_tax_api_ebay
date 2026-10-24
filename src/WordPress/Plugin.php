@@ -25,7 +25,7 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.44';
+    public const VERSION    = '0.0.45';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
