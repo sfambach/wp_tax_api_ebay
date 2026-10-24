@@ -42,8 +42,9 @@ final class ShippingScreen
      * @param list<array{ok: bool, text: string}> $notices
      * @param array<string, array{stage: string, at: int}> $stages his stage notes (D-985)
      * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels label links tax_mail found in DHL's mails, newest first
+     * @param array<string, array<string, mixed>> $carrier order id → what the DHL module says; `mixed`: its array
      */
-    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = []): string
+    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = []): string
     {
         $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
         $html = '<div class="wrap"><h1 class="wp-heading-inline">' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
@@ -96,7 +97,7 @@ final class ShippingScreen
         }
 
         foreach ($shown as $parcel) {
-            $html .= $this->row($parcel, $seller, $tab, $stages, $now);
+            $html .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null);
         }
 
         return $html . '</tbody><tfoot>' . $this->headings($list, $tab) . '</tfoot></table>' . self::dhlChoices($dhlLabels) . '</div>';
@@ -221,8 +222,9 @@ final class ShippingScreen
     /**
      * @param non-empty-list<OpenShipment> $parcel sales to one buyer at one address — one parcel
      * @param array<string, array{stage: string, at: int}> $stages
+     * @param array<string, mixed>|null $carrier the DHL module's word on the tracking number
      */
-    private function row(array $parcel, string $seller, string $stage, array $stages, int $now): string
+    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier = null): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
@@ -318,7 +320,9 @@ final class ShippingScreen
             . '<td>' . $items . '<small>' . esc_html($first->service) . '</small></td>'
             . '<td>' . esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency) . '</td>'
             . '<td>' . ($tracking === '' ? '—' : '<code>' . esc_html($tracking) . '</code>')
-            . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small></td>'
+            . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
+            . ($carrier === null ? '' : '<br><small title="' . esc_attr((string) ($carrier['at'] ?? '')) . '"' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html((string) ($carrier['status'] ?? $carrier['stage'] ?? '')) . '</small>')
+            . '</td>'
             . '<td>' . $actions . '</td></tr>';
     }
 

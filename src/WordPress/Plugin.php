@@ -25,7 +25,7 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.45';
+    public const VERSION    = '0.0.46';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -260,14 +260,15 @@ final class Plugin
                 isset($_GET['order']) && sanitize_key(wp_unslash($_GET['order'])) === 'desc',
             );
             $stages = Settings::stages();
+            $carrier = [];
 
             try {
-                $open = self::shownWithTracking(self::accessToken(), $tab, $stages, $list);
+                $open = self::shownWithTracking(self::accessToken(), $tab, $stages, $list, $carrier);
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, self::dhlLabels());
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, self::dhlLabels(), $carrier);
         });
 
         if ($hook !== false) {
@@ -472,6 +473,39 @@ final class Plugin
         return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
     }
 
+    /**
+     * What the DHL module (wp_tax_api_dhl, filter taxmod_dhl_tracking) knows of each tracking number, and the stage
+     * it moves the parcel to: «shipped» or «delivered» move it on, never back. Without the module nothing happens.
+     *
+     * @param list<OpenShipment> $sales
+     * @param array<string, array{stage: string, at: int}> $stages
+     * @param array<string, array<string, mixed>> $carrier
+     */
+    private static function followCarrier(array $sales, array &$stages, array &$carrier): void
+    {
+        foreach ($sales as $sale) {
+            $number = trim(explode(',', $sale->tracking)[0]);
+
+            if ($number === '') {
+                continue;
+            }
+
+            $word = apply_filters('taxmod_dhl_tracking', null, $number);
+
+            if (! is_array($word) || ! isset($word['stage'])) {
+                continue;
+            }
+
+            $carrier[$sale->orderId] = $word;
+            $target = Stages::afterCarrier($stages[$sale->orderId]['stage'] ?? Stages::OPEN, (string) $word['stage']);
+
+            if ($target !== null) {
+                Settings::saveStage([$sale->orderId], $target, time());
+                $stages[$sale->orderId] = ['stage' => $target, 'at' => time()];
+            }
+        }
+    }
+
     /** Orders eBay counts as shipped stay readable as long as his stage notes last (D-985). */
     private static function labelledSince(): string
     {
@@ -481,10 +515,11 @@ final class Plugin
     /**
      * All sales for the tab counts; tracking numbers only for the parcels of the tab he looks at — one call each.
      *
-     * @param array<string, array{stage: string, at: int}> $stages
+     * @param array<string, array{stage: string, at: int}> $stages updated where the carrier moved a parcel on
+     * @param array<string, array<string, mixed>> $carrier order id → the DHL module's word on it; `mixed` is its array
      * @return list<OpenShipment>
      */
-    private static function shownWithTracking(string $token, string $tab, array $stages, ParcelList $list): array
+    private static function shownWithTracking(string $token, string $tab, array &$stages, ParcelList $list, array &$carrier): array
     {
         $client = self::shippingClient();
         $open = $client->open($token, self::labelledSince());
@@ -500,6 +535,7 @@ final class Plugin
 
         $tracked = $client->tracked($token, array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId]))));
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
+        self::followCarrier($tracked, $stages, $carrier);
 
         return array_map(static fn (OpenShipment $sale): OpenShipment => $byId[$sale->orderId] ?? $sale, $open);
     }

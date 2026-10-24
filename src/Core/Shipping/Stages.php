@@ -44,6 +44,26 @@ final class Stages
         return self::OPEN;
     }
 
+    /**
+     * The stage the carrier's word moves a parcel to — only ever forward; «announced» and «problem» move nothing.
+     *
+     * @param string $carrierStage announced|shipped|delivered|problem (DHL module, taxmod_dhl_tracking)
+     */
+    public static function afterCarrier(string $current, string $carrierStage): ?string
+    {
+        $target = match ($carrierStage) {
+            'shipped'   => self::SHIPPED,
+            'delivered' => self::RECEIVED,
+            default     => null,
+        };
+
+        if ($target === null || array_search($target, self::ALL, true) <= array_search($current, self::ALL, true)) {
+            return null;
+        }
+
+        return $target;
+    }
+
     public static function next(string $stage): ?string
     {
         $at = array_search($stage, self::ALL, true);

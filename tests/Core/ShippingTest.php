@@ -111,6 +111,10 @@ final class ShippingTest extends TestCase
         self::assertSame(Stages::SHIPPED, Stages::next(Stages::PACKED));
         self::assertNull(Stages::next(Stages::RECEIVED));
         self::assertNull(Stages::previous(Stages::OPEN));
+        self::assertSame(Stages::SHIPPED, Stages::afterCarrier(Stages::PACKED, 'shipped'));
+        self::assertSame(Stages::RECEIVED, Stages::afterCarrier(Stages::SHIPPED, 'delivered'));
+        self::assertNull(Stages::afterCarrier(Stages::RECEIVED, 'shipped'));
+        self::assertNull(Stages::afterCarrier(Stages::OPEN, 'problem'));
     }
 
     public function testSearchFilterAndSortLikeAWordPressList(): void
