@@ -258,4 +258,38 @@
 			window.alert(taxebayLabel.failed + ' ' + failure.message);
 		}
 	});
+
+	// The «print label» link from DHL's mail: the plugin fetches the PDF, the browser crops and prints it.
+	document.addEventListener('click', async function (event) {
+		var button = event.target.closest('[data-taxebay-link]');
+
+		if (!button) {
+			return;
+		}
+
+		event.preventDefault();
+		var input = button.parentNode.querySelector('[data-taxebay-link-input]');
+		var link = input ? input.value.trim() : '';
+
+		if (!link) {
+			window.alert(taxebayLabel.noLink);
+			return;
+		}
+
+		button.disabled = true;
+
+		try {
+			var response = await fetch(taxebayLabel.fetch + '&url=' + encodeURIComponent(link), { credentials: 'same-origin' });
+
+			if (!response.ok) {
+				throw new Error((await response.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200));
+			}
+
+			await run(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }), button.getAttribute('data-taxebay-link'));
+		} catch (failure) {
+			window.alert(taxebayLabel.failed + ' ' + failure.message);
+		} finally {
+			button.disabled = false;
+		}
+	});
 }());

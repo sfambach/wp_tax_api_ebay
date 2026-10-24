@@ -23,10 +23,11 @@ final class ShippingScreen
     public const SHIP = 'taxebay_ship';
     public const INSERT = 'taxebay_insert';
     public const STAGE = 'taxebay_stage';
+    public const LABEL_PDF = 'taxebay_label_pdf';
 
     /**
-     * Label print onto 62 mm tape (assets/label62.js) is parked: his scanner could not read the matrix code from it
-     * (2026-10-23). The code stays; the buttons are off until it does.
+     * Label print from an uploaded file or a screenshot is parked: his scanner could not read the matrix code from a
+     * screenshot (2026-10-23). The PDF behind DHL's mail link reads cleanly, so that way is on.
      */
     public const LABEL_PRINT = false;
 
@@ -244,6 +245,11 @@ final class ShippingScreen
                 . '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
                 . '<input type="text" name="tracking" style="width:10em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary small', 'submit', false, $paid ? null : ['disabled' => 'disabled']) . '</form>';
+        }
+
+        if ($early && $labelled) {
+            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
+                . '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Print label 62 mm', 'taxebay') . '</button></div>';
         }
 
         if (self::LABEL_PRINT && $early) {

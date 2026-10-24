@@ -11,6 +11,7 @@ use TaxEbay\Core\OAuth\IdentityClient;
 use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
+use TaxEbay\Core\Shipping\DhlLabelLink;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
@@ -24,7 +25,7 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.42';
+    public const VERSION    = '0.0.43';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -52,6 +53,7 @@ final class Plugin
         add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
         add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
         add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
+        add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
     }
 
     /**
@@ -268,7 +270,7 @@ final class Plugin
             print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list);
         });
 
-        if ($hook !== false && ShippingScreen::LABEL_PRINT) {
+        if ($hook !== false) {
             add_action('load-' . $hook, self::enqueueLabelPrint(...));
         }
     }
@@ -287,6 +289,9 @@ final class Plugin
             'empty'  => __('The PDF has no printed content.', 'taxebay'),
             'failed' => __('The label could not be read:', 'taxebay'),
             'noImage' => __('There is no image in the clipboard.', 'taxebay'),
+            'noLink'  => __('Paste the «print label» link from DHL\'s mail first.', 'taxebay'),
+            // Not wp_nonce_url(): that escapes & for HTML, and this goes to a script.
+            'fetch'   => add_query_arg(['action' => ShippingScreen::LABEL_PDF, '_wpnonce' => wp_create_nonce(ShippingScreen::LABEL_PDF)], admin_url('admin-post.php')),
         ]);
     }
 
@@ -380,6 +385,33 @@ final class Plugin
         }
 
         return $kept;
+    }
+
+    /**
+     * The label PDF behind the link in DHL's mail, fetched here because the browser may not read another site's
+     * answer. Only that one DHL address is fetched (DhlLabelLink); the PDF is passed through, not stored.
+     */
+    public function handleLabelPdf(): void
+    {
+        $this->guard(ShippingScreen::LABEL_PDF);
+        $url = isset($_GET['url']) ? esc_url_raw(wp_unslash($_GET['url']), ['https']) : '';
+
+        if (! DhlLabelLink::accepts($url)) {
+            wp_die(esc_html__('That is not a DHL label link.', 'taxebay'), 400);
+        }
+
+        $response = wp_remote_get($url, ['timeout' => 20, 'redirection' => 0]);
+        $body = is_wp_error($response) ? '' : wp_remote_retrieve_body($response);
+
+        if (wp_remote_retrieve_response_code($response) !== 200 || ! str_starts_with($body, '%PDF')) {
+            wp_die(esc_html__('DHL did not hand out the label — the link may have expired.', 'taxebay'), 502);
+        }
+
+        nocache_headers();
+        header('Content-Type: application/pdf');
+        header('X-Content-Type-Options: nosniff');
+        print $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- a PDF, not HTML
+        exit;
     }
 
     public function handleInsert(): void

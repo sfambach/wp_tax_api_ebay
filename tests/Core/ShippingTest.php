@@ -7,6 +7,7 @@ use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
 use TaxEbay\Core\Shipping\InsertText;
+use TaxEbay\Core\Shipping\DhlLabelLink;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ParcelList;
@@ -128,6 +129,16 @@ final class ShippingTest extends TestCase
         self::assertSame(['B'], $ids((new ParcelList('', ParcelList::LABEL_EBAY))->apply($parcels)));
         self::assertSame(['A'], $ids((new ParcelList('', ParcelList::LABEL_OWN))->apply($parcels)));
         self::assertSame([], $ids((new ParcelList('nothing like it'))->apply($parcels)));
+    }
+
+    public function testOnlyDhlLabelLinksAreFetched(): void
+    {
+        self::assertTrue(DhlLabelLink::accepts('https://www.dhl.de/int-versenden/gw/rest/init?token=abc%3D&download=letter&pos=1'));
+        self::assertFalse(DhlLabelLink::accepts('http://www.dhl.de/int-versenden/gw/rest/init?token=abc'));
+        self::assertFalse(DhlLabelLink::accepts('https://www.dhl.de.evil.example/int-versenden/gw/rest/init?token=abc'));
+        self::assertFalse(DhlLabelLink::accepts('https://www.dhl.de/int-versenden/gw/restweb/Invoice?token=abc'));
+        self::assertFalse(DhlLabelLink::accepts('https://user@www.dhl.de/int-versenden/gw/rest/init?token=abc'));
+        self::assertFalse(DhlLabelLink::accepts('https://www.dhl.de/int-versenden/gw/rest/init'));
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void
