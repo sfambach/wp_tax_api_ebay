@@ -8,6 +8,8 @@ use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\Api\HttpResponse;
 use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\DhlLabelLink;
+use TaxEbay\Core\Shipping\LabelMatch;
+use TaxEbay\Core\Shipping\LabelText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\ParcelList;
@@ -143,6 +145,23 @@ final class ShippingTest extends TestCase
         self::assertFalse(DhlLabelLink::accepts('https://www.dhl.de/int-versenden/gw/restweb/Invoice?token=abc'));
         self::assertFalse(DhlLabelLink::accepts('https://user@www.dhl.de/int-versenden/gw/rest/init?token=abc'));
         self::assertFalse(DhlLabelLink::accepts('https://www.dhl.de/int-versenden/gw/rest/init'));
+    }
+
+    public function testLabelTextFindsItsParcel(): void
+    {
+        $font = gzcompress("begincmap\n3 beginbfchar\n<0001> <0020>\n<0002> <004D>\n<0003> <00DC>\nendbfchar\nendcmap");
+        $page = gzcompress("BT /F1 10 Tf [<00020003>] TJ 0 -12 Td (12345 ORT) Tj ET");
+        $pdf = "%PDF-1.4\n1 0 obj << /Font << /F1 2 0 R >> >> endobj\n2 0 obj << /Type /Font /ToUnicode 3 0 R >> endobj\n"
+            . "3 0 obj << /Filter /FlateDecode >>\nstream\n" . $font . "\nendstream\nendobj\n"
+            . "4 0 obj << /Filter /FlateDecode >>\nstream\n" . $page . "\nendstream\nendobj\n";
+        $lines = LabelText::of($pdf);
+        $sale = static fn (array $address): array => [new OpenShipment('A', 'b', '2026-10-23', true, [], $address, '', null, 'EUR')];
+
+        self::assertSame(['MÜ', '12345 ORT'], $lines);
+        self::assertTrue(LabelMatch::fits($lines, $sale(['Mü', 'Weg 1', '12345 Ort', 'DE'])));
+        self::assertFalse(LabelMatch::fits($lines, $sale(['Mü', 'Weg 1', '54321 Ort', 'DE'])));
+        self::assertFalse(LabelMatch::fits($lines, $sale(['Max', 'Weg 1', '12345 Ort', 'DE'])));
+        self::assertSame([], LabelText::of('not a pdf'));
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void

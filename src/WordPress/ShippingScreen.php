@@ -43,8 +43,9 @@ final class ShippingScreen
      * @param array<string, array{stage: string, at: int}> $stages his stage notes (D-985)
      * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels label links tax_mail found in DHL's mails, newest first
      * @param array<string, array<string, mixed>> $carrier order id → what the DHL module says; `mixed`: its array
+     * @param array<string, string> $labelLinks order id → the DHL label link whose recipient is this parcel's
      */
-    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = []): string
+    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = []): string
     {
         $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
         $html = '<div class="wrap"><h1 class="wp-heading-inline">' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
@@ -97,7 +98,7 @@ final class ShippingScreen
         }
 
         foreach ($shown as $parcel) {
-            $html .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null);
+            $html .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null, $labelLinks[$parcel[0]->orderId] ?? '');
         }
 
         return $html . '</tbody><tfoot>' . $this->headings($list, $tab) . '</tfoot></table>' . self::dhlChoices($dhlLabels) . '</div>';
@@ -224,7 +225,7 @@ final class ShippingScreen
      * @param array<string, array{stage: string, at: int}> $stages
      * @param array<string, mixed>|null $carrier the DHL module's word on the tracking number
      */
-    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier = null): string
+    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier = null, string $labelLink = ''): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
@@ -272,8 +273,9 @@ final class ShippingScreen
         }
 
         if ($early && $labelled) {
-            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input list="taxebay-dhl-labels" style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
-                . '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Print label 62 mm', 'taxebay') . '</button></div>';
+            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input list="taxebay-dhl-labels" value="' . esc_attr($labelLink) . '" style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
+                . '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Print label 62 mm', 'taxebay') . '</button>'
+                . ($labelLink === '' ? '' : '<br><small>' . esc_html__('Label found in DHL\'s mail (recipient matches).', 'taxebay') . '</small>') . '</div>';
         }
 
         if (self::LABEL_PRINT && $early) {

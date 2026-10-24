@@ -12,6 +12,8 @@ use TaxEbay\Core\OAuth\TokenClient;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
 use TaxEbay\Core\Shipping\DhlLabelLink;
+use TaxEbay\Core\Shipping\LabelMatch;
+use TaxEbay\Core\Shipping\LabelText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
@@ -25,7 +27,9 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.46';
+    private const LABEL_FETCHES_PER_VIEW = 5;
+
+    public const VERSION    = '0.0.47';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -268,7 +272,8 @@ final class Plugin
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, self::dhlLabels(), $carrier);
+            $labels = self::dhlLabels();
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : []);
         });
 
         if ($hook !== false) {
@@ -421,10 +426,9 @@ final class Plugin
             wp_die(esc_html__('That is not a DHL label link.', 'taxebay'), 400);
         }
 
-        $response = wp_remote_get($url, ['timeout' => 20, 'redirection' => 0]);
-        $body = is_wp_error($response) ? '' : wp_remote_retrieve_body($response);
+        $body = self::labelPdf($url);
 
-        if (wp_remote_retrieve_response_code($response) !== 200 || ! str_starts_with($body, '%PDF')) {
+        if ($body === null) {
             wp_die(esc_html__('DHL did not hand out the label — the link may have expired.', 'taxebay'), 502);
         }
 
@@ -433,6 +437,63 @@ final class Plugin
         header('X-Content-Type-Options: nosniff');
         print $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- a PDF, not HTML
         exit;
+    }
+
+    /** The PDF behind a DHL label link, or null when DHL does not hand it out; callers check the link first. */
+    private static function labelPdf(string $url): ?string
+    {
+        $response = wp_remote_get($url, ['timeout' => 20, 'redirection' => 0]);
+        $body = is_wp_error($response) ? '' : wp_remote_retrieve_body($response);
+
+        return wp_remote_retrieve_response_code($response) === 200 && str_starts_with($body, '%PDF') ? $body : null;
+    }
+
+    /**
+     * Which DHL label belongs to which shown parcel, read from the recipient printed on each label. A label's text is
+     * kept for the 30 days tax_mail keeps the link, so each PDF is fetched once.
+     *
+     * @param list<OpenShipment> $sales
+     * @param list<array{cart: string, date: string, links: list<string>}> $labels
+     * @return array<string, string> order id → label link
+     */
+    private static function labelsByOrder(array $sales, array $labels): array
+    {
+        $parcels = array_values(array_filter(Parcels::of($sales), static fn (array $parcel): bool => $parcel[0]->labelled));
+
+        if ($parcels === [] || $labels === []) {
+            return [];
+        }
+
+        $byOrder = [];
+        $fetched = 0;
+
+        foreach ($labels as $label) {
+            foreach ($label['links'] as $link) {
+                $key = 'taxebay_label_' . md5($link);
+                $lines = get_transient($key);
+
+                if (! is_array($lines)) {
+                    // A slow page beats a stuck one: at most a few new PDFs per view, the rest next time.
+                    if (++$fetched > self::LABEL_FETCHES_PER_VIEW) {
+                        continue;
+                    }
+
+                    $pdf = self::labelPdf($link);
+                    $lines = $pdf === null ? [] : LabelText::of($pdf);
+                    set_transient($key, $lines, $pdf === null ? HOUR_IN_SECONDS : 30 * DAY_IN_SECONDS);
+                }
+
+                foreach ($parcels as $parcel) {
+                    if (LabelMatch::fits(array_map('strval', $lines), $parcel)) {
+                        foreach ($parcel as $sale) {
+                            $byOrder[$sale->orderId] ??= $link;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $byOrder;
     }
 
     public function handleInsert(): void
