@@ -1,7 +1,7 @@
 /**
  * Fits an eBay shipping label (the PDF behind the link in DHL's mail) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
- * its printed area, turned upright and printed at tape width with order number and seller in its empty corner. The PDF never
- * leaves the browser.
+ * its printed area, turned upright and printed at tape width with order number and seller in its empty corner. The plugin fetches the
+ * PDF for the browser and stores nothing.
  */
 (function () {
 	'use strict';
