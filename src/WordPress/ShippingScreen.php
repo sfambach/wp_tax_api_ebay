@@ -41,8 +41,9 @@ final class ShippingScreen
      * @param list<OpenShipment>|string $open the sales, or why they could not be read
      * @param list<array{ok: bool, text: string}> $notices
      * @param array<string, array{stage: string, at: int}> $stages his stage notes (D-985)
+     * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels label links tax_mail found in DHL's mails, newest first
      */
-    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList()): string
+    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = []): string
     {
         $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
         $html = '<div class="wrap"><h1 class="wp-heading-inline">' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
@@ -98,7 +99,28 @@ final class ShippingScreen
             $html .= $this->row($parcel, $seller, $tab, $stages, $now);
         }
 
-        return $html . '</tbody><tfoot>' . $this->headings($list, $tab) . '</tfoot></table></div>';
+        return $html . '</tbody><tfoot>' . $this->headings($list, $tab) . '</tfoot></table>' . self::dhlChoices($dhlLabels) . '</div>';
+    }
+
+    /**
+     * The links tax_mail read from DHL's mails, offered in every label field; which parcel a label belongs to he sees
+     * on the printout (the mail does not say).
+     *
+     * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels
+     */
+    private static function dhlChoices(array $dhlLabels): string
+    {
+        $options = '';
+
+        foreach ($dhlLabels as $label) {
+            $at = strtotime($label['date']);
+
+            foreach ($label['links'] as $number => $link) {
+                $options .= '<option value="' . esc_attr($link) . '" label="' . esc_attr(trim($label['cart'] . ' · ' . ($at === false ? '' : wp_date('d.m. H:i', $at)) . (count($label['links']) > 1 ? ' #' . ($number + 1) : ''), ' ·')) . '"></option>';
+            }
+        }
+
+        return '<datalist id="taxebay-dhl-labels">' . $options . '</datalist>';
     }
 
     /**
@@ -248,7 +270,7 @@ final class ShippingScreen
         }
 
         if ($early && $labelled) {
-            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
+            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input list="taxebay-dhl-labels" style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
                 . '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Print label 62 mm', 'taxebay') . '</button></div>';
         }
 

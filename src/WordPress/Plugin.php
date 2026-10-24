@@ -25,7 +25,7 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    public const VERSION    = '0.0.43';
+    public const VERSION    = '0.0.44';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -267,7 +267,7 @@ final class Plugin
                 $open = $failure->getMessage();
             }
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list);
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, self::dhlLabels());
         });
 
         if ($hook !== false) {
@@ -293,6 +293,26 @@ final class Plugin
             // Not wp_nonce_url(): that escapes & for HTML, and this goes to a script.
             'fetch'   => add_query_arg(['action' => ShippingScreen::LABEL_PDF, '_wpnonce' => wp_create_nonce(ShippingScreen::LABEL_PDF)], admin_url('admin-post.php')),
         ]);
+    }
+
+    /**
+     * Label links tax_mail read from DHL's mails (tax_mail ≥ 0.3.0); only links this plugin would fetch are kept.
+     *
+     * @return list<array{cart: string, date: string, links: list<string>}>
+     */
+    private static function dhlLabels(): array
+    {
+        $labels = [];
+
+        foreach ((array) apply_filters('taxmail_dhl_labels', []) as $label) {
+            $links = array_values(array_filter(array_map('strval', (array) ($label['links'] ?? [])), DhlLabelLink::accepts(...)));
+
+            if ($links !== []) {
+                $labels[] = ['cart' => (string) ($label['cart'] ?? ''), 'date' => (string) ($label['date'] ?? ''), 'links' => $links];
+            }
+        }
+
+        return $labels;
     }
 
     /** The eBay user name his account is connected as. */
