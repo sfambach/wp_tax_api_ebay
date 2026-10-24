@@ -1,5 +1,5 @@
 /**
- * Fits an eBay shipping label (PDF, image or screenshot) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
+ * Fits an eBay shipping label (the PDF behind the link in DHL's mail) onto the 62 mm tape of the Brother QL-810W: every page is rendered, cropped to
  * its printed area, turned upright and printed at tape width with order number and seller in its empty corner. The PDF never
  * leaves the browser.
  */
@@ -34,7 +34,7 @@
 			}
 		}
 
-		// Lines through nearly the whole picture are a window or page frame (a screenshot), not the label.
+		// Lines through nearly the whole picture are a page frame, not the label.
 		for (var y = 0; y < canvas.height; y++) {
 			for (var x = 0; x < canvas.width; x++) {
 				if (ink[y * canvas.width + x] && across[x] < canvas.height * 0.8) {
@@ -113,25 +113,7 @@
 		return out;
 	}
 
-	async function picture(blob) {
-		var bitmap = await createImageBitmap(blob);
-		var canvas = document.createElement('canvas');
-		canvas.width = bitmap.width;
-		canvas.height = bitmap.height;
-		var context = canvas.getContext('2d');
-		context.fillStyle = '#fff';
-		context.fillRect(0, 0, canvas.width, canvas.height);
-		context.drawImage(bitmap, 0, 0);
-		// A screenshot is usually cut close already; only a wide blank (a fifth of it) ends the label.
-		var label = crop(canvas, Math.round(canvas.height * 0.2));
-		return label ? [label] : [];
-	}
-
 	async function labels(file) {
-		if (file.type.indexOf('image/') === 0) {
-			return picture(file);
-		}
-
 		var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer(), cMapUrl: taxebayLabel.cmaps, cMapPacked: true, standardFontDataUrl: taxebayLabel.fonts }).promise;
 		var pages = [];
 
@@ -218,46 +200,6 @@
 			window.alert(taxebayLabel.failed + ' ' + failure.message);
 		});
 	}
-
-	document.addEventListener('change', function (event) {
-		var input = event.target;
-
-		if (!input.matches('input[data-taxebay-label]') || !input.files.length) {
-			return;
-		}
-
-		run(input.files[0], input.getAttribute('data-taxebay-label')).finally(function () {
-			input.value = '';
-		});
-	});
-
-	// A screenshot of the label from the clipboard; reading it needs the browser's permission.
-	document.addEventListener('click', async function (event) {
-		var button = event.target.closest('[data-taxebay-paste]');
-
-		if (!button) {
-			return;
-		}
-
-		event.preventDefault();
-
-		try {
-			var items = await navigator.clipboard.read();
-
-			for (var i = 0; i < items.length; i++) {
-				var type = items[i].types.find(function (kind) { return kind.indexOf('image/') === 0; });
-
-				if (type) {
-					await run(await items[i].getType(type), button.getAttribute('data-taxebay-paste'));
-					return;
-				}
-			}
-
-			window.alert(taxebayLabel.noImage);
-		} catch (failure) {
-			window.alert(taxebayLabel.failed + ' ' + failure.message);
-		}
-	});
 
 	// The «print label» link from DHL's mail: the plugin fetches the PDF, the browser crops and prints it.
 	document.addEventListener('click', async function (event) {

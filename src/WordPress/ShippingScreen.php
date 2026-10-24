@@ -25,12 +25,6 @@ final class ShippingScreen
     public const STAGE = 'taxebay_stage';
     public const LABEL_PDF = 'taxebay_label_pdf';
 
-    /**
-     * Label print from an uploaded file or a screenshot is parked: his scanner could not read the matrix code from a
-     * screenshot (2026-10-23). The PDF behind DHL's mail link reads cleanly, so that way is on.
-     */
-    public const LABEL_PRINT = false;
-
     /** A parcel this long in «shipped» without arriving is worth asking after. */
     private const OVERDUE_DAYS = 7;
 
@@ -278,11 +272,6 @@ final class ShippingScreen
                 . ($labelLink === '' ? '' : '<br><small>' . esc_html__('Label found in DHL\'s mail (recipient matches).', 'taxebay') . '</small>') . '</div>';
         }
 
-        if (self::LABEL_PRINT && $early) {
-            $actions .= '<label class="button button-small">' . esc_html__('Label PDF/image → 62 mm', 'taxebay')
-                . '<input type="file" accept="application/pdf,image/*" hidden data-taxebay-label="' . esc_attr(self::reference($ids, $seller)) . '"></label> '
-                . '<button type="button" class="button button-small" data-taxebay-paste="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Paste screenshot → 62 mm', 'taxebay') . '</button> ';
-        }
 
         $back = Stages::previous($stage);
         $next = Stages::next($stage);

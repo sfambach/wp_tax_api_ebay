@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.47';
+    public const VERSION    = '0.0.48';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -294,7 +294,6 @@ final class Plugin
             'fonts'  => plugins_url('assets/pdfjs/standard_fonts/', $main),
             'empty'  => __('The PDF has no printed content.', 'taxebay'),
             'failed' => __('The label could not be read:', 'taxebay'),
-            'noImage' => __('There is no image in the clipboard.', 'taxebay'),
             'noLink'  => __('Paste the «print label» link from DHL\'s mail first.', 'taxebay'),
             // Not wp_nonce_url(): that escapes & for HTML, and this goes to a script.
             'fetch'   => add_query_arg(['action' => ShippingScreen::LABEL_PDF, '_wpnonce' => wp_create_nonce(ShippingScreen::LABEL_PDF)], admin_url('admin-post.php')),
