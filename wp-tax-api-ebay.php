@@ -6,7 +6,7 @@
  * Version:           0.0.49
  * Requires at least: 6.9
  * Requires PHP:      8.2
- * Author:            Stefan Fambach (SteFam)
+ * Author:            Stefan Fambach (SteFam), Claude (Anthropic AI)
  * Author URI:        https://www.fambach.net
  * License:           PolyForm Noncommercial 1.0.0
  * License URI:       https://polyformproject.org/licenses/noncommercial/1.0.0/
