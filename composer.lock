@@ -1778,12 +1778,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/sfambach/wp-taxonomy-modeler.git",
-                "reference": "e615de9bc1c6659ddee0c3a3110b85eabd6ae079"
+                "reference": "7cdafefc1eb6ef78211a8463926cc11def2b71e4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/e615de9bc1c6659ddee0c3a3110b85eabd6ae079",
-                "reference": "e615de9bc1c6659ddee0c3a3110b85eabd6ae079",
+                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/7cdafefc1eb6ef78211a8463926cc11def2b71e4",
+                "reference": "7cdafefc1eb6ef78211a8463926cc11def2b71e4",
                 "shasum": ""
             },
             "require": {
@@ -1815,10 +1815,10 @@
             ],
             "description": "Taxonomy Modeller — build data models as a tree of nodes and relations.",
             "support": {
-                "source": "https://github.com/sfambach/wp-taxonomy-modeler/tree/claude/project-thread-0d3ttf",
+                "source": "https://github.com/sfambach/wp-taxonomy-modeler/tree/claude/project-thread-t6sfmr",
                 "issues": "https://github.com/sfambach/wp-taxonomy-modeler/issues"
             },
-            "time": "2026-10-21T12:56:34+00:00"
+            "time": "2026-10-25T04:24:45+00:00"
         },
         {
             "name": "theseer/tokenizer",

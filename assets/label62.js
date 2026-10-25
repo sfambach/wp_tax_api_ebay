@@ -210,7 +210,7 @@
 		}
 
 		event.preventDefault();
-		var input = button.parentNode.querySelector('[data-taxebay-link-input]');
+		var input = document.getElementById(button.getAttribute('data-taxebay-input'));
 		var link = input ? input.value.trim() : '';
 
 		if (!link) {

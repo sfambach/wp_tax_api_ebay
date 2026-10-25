@@ -4,6 +4,7 @@ namespace TaxEbay\WordPress;
 
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
+use Taxmod\WordPress\Admin\ListPage;
 use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
@@ -29,9 +30,15 @@ final class ShippingScreen
     private const OVERDUE_DAYS = 7;
 
     private const BULK_FORM = 'taxebay-bulk';
-    private const FILTER_FORM = 'taxebay-filter';
+    private const SEARCH_FORM = 'taxebay-search';
+
+    /** Bulk moves post to `admin_post_<this><stage>`; ListPage's bulk bar names the handler in its action field. */
+    public const BULK_TO = 'taxebay_to_';
 
     /**
+     * The shipping list in the modeller's shared list page (D-989): tabs by stage (D-985), search and filters, rows with
+     * their buttons on the right and the details below.
+     *
      * @param list<OpenShipment>|string $open the sales, or why they could not be read
      * @param list<array{ok: bool, text: string}> $notices
      * @param array<string, array{stage: string, at: int}> $stages his stage notes (D-985)
@@ -41,15 +48,13 @@ final class ShippingScreen
      */
     public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = []): string
     {
-        $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
-        $html = '<div class="wrap"><h1 class="wp-heading-inline">' . esc_html__('eBay shipping', 'taxebay') . ' <small style="font-size:.6em;color:#646970">' . esc_html(Plugin::VERSION) . '</small></h1>';
-
-        if (trim($list->search) !== '') {
-            /* translators: %s: search words */
-            $html .= '<span class="subtitle">' . esc_html(sprintf(__('Search results for: %s', 'taxebay'), $list->search)) . '</span>';
+        if (! method_exists(ListPage::class, 'searchBox')) {
+            return '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1><div class="notice notice-error inline"><p>'
+                . esc_html__('This page needs Taxonomy Modeller 0.1.65 or newer.', 'taxebay') . '</p></div></div>';
         }
 
-        $html .= '<hr class="wp-header-end">';
+        $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
+        $html = '<div class="wrap">' . ListPage::heading(__('eBay shipping', 'taxebay'), Plugin::VERSION);
 
         foreach ($notices as $notice) {
             $html .= '<div class="notice ' . ($notice['ok'] ? 'notice-success' : 'notice-error') . ' inline"><p>' . esc_html($notice['text']) . '</p></div>';
@@ -74,33 +79,62 @@ final class ShippingScreen
             }
         }
 
-        $html .= '<nav class="nav-tab-wrapper">';
+        $tabs = [];
+        $bulk = [];
 
         foreach (Stages::ALL as $stage) {
-            $html .= '<a class="nav-tab' . ($stage === $tab ? ' nav-tab-active' : '') . '" href="' . esc_url(self::url($list, ['tab' => $stage])) . '">'
-                . esc_html(self::stageName($stage)) . ' <span class="count">(' . count($list->apply($byStage[$stage])) . ')</span></a>';
+            $tabs[] = [$stage, self::stageName($stage), count($list->apply($byStage[$stage]))];
+
+            if ($stage !== $tab) {
+                /* translators: %s: name of a tab */
+                $bulk[self::BULK_TO . $stage] = sprintf(__('Move to «%s»', 'taxebay'), self::stageName($stage));
+            }
         }
 
-        $html .= '</nav>';
         $shown = $list->apply($byStage[$tab]);
-        $html .= $this->filters($list, $tab, count($shown));
+        $html .= ListPage::tabs($tabs, $tab, static fn (string $stage): string => self::url($list, ['tab' => $stage]))
+            . ListPage::searchBox(self::SEARCH_FORM, $list->search, __('Order, buyer, item, tracking…', 'taxebay'), array_filter(['page' => self::PAGE, 'tab' => $tab, 'orderby' => $list->orderBy === 'date' ? '' : $list->orderBy, 'order' => $list->descending ? 'desc' : '']), __('Search parcels', 'taxebay'))
+            . ListPage::bulkBar(
+                self::BULK_FORM,
+                self::STAGE,
+                $bulk,
+                /* translators: %d: number of parcels */
+                sprintf(_n('%d parcel', '%d parcels', count($shown), 'taxebay'), count($shown)),
+                ListPage::filters(self::SEARCH_FORM, [
+                    ['label', ['' => __('All labels', 'taxebay'), ParcelList::LABEL_EBAY => __('eBay label', 'taxebay'), ParcelList::LABEL_OWN => __('Own label', 'taxebay')], $list->label, __('Label', 'taxebay')],
+                    ['paid', ['' => __('Paid and unpaid', 'taxebay'), ParcelList::PAID => __('Paid', 'taxebay'), ParcelList::UNPAID => __('Not paid yet', 'taxebay')], $list->paid, __('Payment', 'taxebay')],
+                ])
+            );
 
-        $html .= '<table class="wp-list-table widefat fixed striped table-view-list"><thead>' . $this->headings($list, $tab) . '</thead><tbody>';
-
-        if ($shown === []) {
-            $html .= '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nothing here.', 'taxebay') . '</td></tr>';
-        }
+        $rows = '';
 
         foreach ($shown as $parcel) {
-            $html .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null, $labelLinks[$parcel[0]->orderId] ?? '');
+            $rows .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null, $labelLinks[$parcel[0]->orderId] ?? '');
         }
 
-        return $html . '</tbody><tfoot>' . $this->headings($list, $tab) . '</tfoot></table>' . self::dhlChoices($dhlLabels) . '</div>';
+        if ($rows === '') {
+            $rows = '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nothing here.', 'taxebay') . '</td></tr>';
+        }
+
+        return $html . ListPage::table([
+            self::column($list, 'date', __('Order', 'taxebay'), '12em'),
+            self::column($list, 'buyer', __('Buyer', 'taxebay'), '13em'),
+            [__('Items', 'taxebay')],
+            self::column($list, 'total', __('Total', 'taxebay'), '7em'),
+            [__('Tracking number', 'taxebay'), '12em'],
+        ], $rows) . self::dhlChoices($dhlLabels) . '</div>';
+    }
+
+    /** @return array{0: string, 1: string, 2: string, 3: string} a sortable column for ListPage::table() */
+    private static function column(ParcelList $list, string $key, string $label, string $width): array
+    {
+        $current = $list->orderBy === $key;
+
+        return [$label, $width, self::url($list, ['orderby' => $key === 'date' ? '' : $key, 'order' => $current && ! $list->descending ? 'desc' : '']), $current ? ($list->descending ? 'desc' : 'asc') : ''];
     }
 
     /**
-     * The links tax_mail read from DHL's mails, offered in every label field; which parcel a label belongs to he sees
-     * on the printout (the mail does not say).
+     * The links tax_mail read from DHL's mails, offered in every label field when no label matched.
      *
      * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels
      */
@@ -138,72 +172,6 @@ final class ShippingScreen
         return admin_url('admin.php?' . http_build_query(array_filter(array_merge($query, $change)), '', '&'));
     }
 
-    /** Search box, filter drop-downs and bulk actions, laid out as a WordPress list table does it. */
-    private function filters(ParcelList $list, string $tab, int $count): string
-    {
-        $select = static function (string $name, string $current, array $options, string $label, string $form): string {
-            $html = '<label class="screen-reader-text" for="taxebay-' . esc_attr($name) . '">' . esc_html($label) . '</label><select name="' . esc_attr($name) . '" id="taxebay-' . esc_attr($name) . '" form="' . esc_attr($form) . '">';
-
-            foreach ($options as $value => $text) {
-                $html .= '<option value="' . esc_attr((string) $value) . '"' . ((string) $value === $current ? ' selected' : '') . '>' . esc_html($text) . '</option>';
-            }
-
-            return $html . '</select>';
-        };
-
-        $bulk = ['' => __('Bulk actions', 'taxebay')];
-
-        foreach (Stages::ALL as $stage) {
-            if ($stage !== $tab) {
-                /* translators: %s: name of a tab */
-                $bulk[$stage] = sprintf(__('Move to «%s»', 'taxebay'), self::stageName($stage));
-            }
-        }
-
-        /* translators: %d: number of parcels */
-        $items = '<div class="tablenav-pages one-page"><span class="displaying-num">' . esc_html(sprintf(_n('%d parcel', '%d parcels', $count, 'taxebay'), $count)) . '</span></div>';
-
-        return '<form method="get" id="' . self::FILTER_FORM . '" action="' . esc_url(admin_url('admin.php')) . '">'
-            . '<input type="hidden" name="page" value="' . esc_attr(self::PAGE) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
-            . ($list->orderBy === 'date' ? '' : '<input type="hidden" name="orderby" value="' . esc_attr($list->orderBy) . '">')
-            . ($list->descending ? '<input type="hidden" name="order" value="desc">' : '')
-            . '<p class="search-box"><label class="screen-reader-text" for="taxebay-search">' . esc_html__('Search parcels', 'taxebay') . '</label>'
-            . '<input type="search" id="taxebay-search" name="s" value="' . esc_attr($list->search) . '" placeholder="' . esc_attr__('Order, buyer, item, tracking…', 'taxebay') . '"> '
-            . get_submit_button(__('Search parcels', 'taxebay'), '', '', false, ['id' => 'search-submit']) . '</p></form>'
-            . '<div class="tablenav top">'
-            . '<form method="post" id="' . self::BULK_FORM . '" action="' . esc_url(admin_url('admin-post.php')) . '" class="alignleft actions bulkactions">'
-            . '<input type="hidden" name="action" value="' . esc_attr(self::STAGE) . '">'
-            . wp_nonce_field(self::STAGE, '_wpnonce', true, false)
-            . $select('stage', '', $bulk, __('Bulk actions', 'taxebay'), self::BULK_FORM)
-            . get_submit_button(__('Apply', 'taxebay'), 'action', '', false) . '</form>'
-            . '<div class="alignleft actions">'
-            . $select('label', $list->label, ['' => __('All labels', 'taxebay'), ParcelList::LABEL_EBAY => __('eBay label', 'taxebay'), ParcelList::LABEL_OWN => __('Own label', 'taxebay')], __('Label', 'taxebay'), self::FILTER_FORM)
-            . $select('paid', $list->paid, ['' => __('Paid and unpaid', 'taxebay'), ParcelList::PAID => __('Paid', 'taxebay'), ParcelList::UNPAID => __('Not paid yet', 'taxebay')], __('Payment', 'taxebay'), self::FILTER_FORM)
-            . get_submit_button(__('Filter', 'taxebay'), '', 'filter_action', false, ['form' => self::FILTER_FORM])
-            . '</div>'
-            . $items . '<br class="clear"></div>';
-    }
-
-    private function headings(ParcelList $list, string $tab): string
-    {
-        $sortable = static function (string $key, string $label) use ($list): string {
-            $current = $list->orderBy === $key;
-            $next = $current && ! $list->descending ? 'desc' : 'asc';
-
-            return '<th scope="col" class="manage-column ' . ($current ? 'sorted ' . ($list->descending ? 'desc' : 'asc') : 'sortable ' . ($next === 'asc' ? 'desc' : 'asc')) . '">'
-                . '<a href="' . esc_url(self::url($list, ['orderby' => $key === 'date' ? '' : $key, 'order' => $next === 'desc' ? 'desc' : ''])) . '"><span>' . esc_html($label) . '</span>'
-                . '<span class="sorting-indicators"><span class="sorting-indicator asc" aria-hidden="true"></span><span class="sorting-indicator desc" aria-hidden="true"></span></span></a></th>';
-        };
-
-        return '<tr><td class="manage-column column-cb check-column"><input type="checkbox" aria-label="' . esc_attr__('Select all', 'taxebay') . '"></td>'
-            . str_replace('<th ', '<th style="width:12em" ', $sortable('date', __('Order', 'taxebay')))
-            . $sortable('buyer', __('Buyer', 'taxebay'))
-            . '<th scope="col" class="manage-column" style="width:25%">' . esc_html__('Items', 'taxebay') . '</th>'
-            . str_replace('<th ', '<th style="width:7em" ', $sortable('total', __('Total', 'taxebay')))
-            . '<th scope="col" class="manage-column">' . esc_html__('Tracking number', 'taxebay') . '</th>'
-            . '<th scope="col" class="manage-column" style="width:' . ($tab === Stages::OPEN || $tab === Stages::PACKED ? '30' : '16') . '%">' . esc_html__('Actions', 'taxebay') . '</th></tr>';
-    }
-
     private static function stageName(string $stage): string
     {
         return match ($stage) {
@@ -215,37 +183,110 @@ final class ShippingScreen
     }
 
     /**
+     * One parcel: what to know at a glance in the cells, the next steps as buttons on the right, the rest below.
+     *
      * @param non-empty-list<OpenShipment> $parcel sales to one buyer at one address — one parcel
      * @param array<string, array{stage: string, at: int}> $stages
      * @param array<string, mixed>|null $carrier the DHL module's word on the tracking number
      */
-    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier = null, string $labelLink = ''): string
+    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier, string $labelLink): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
         $orders = implode(',', $ids);
+        $key = 'taxebay-' . md5($orders);
         $paid = array_reduce($parcel, static fn (bool $all, OpenShipment $sale): bool => $all && $sale->paid, true);
         $labelled = array_reduce($parcel, static fn (bool $all, OpenShipment $sale): bool => $all && $sale->labelled, true);
-        $items = '';
-
-        foreach ($parcel as $sale) {
-            foreach ($sale->items as $item) {
-                $items .= esc_html($item['quantity'] . ' × ' . $item['title']) . '<br>';
-            }
-        }
-
+        $early = in_array($stage, [Stages::OPEN, Stages::PACKED], true);
         $since = $stages[$first->orderId]['at'] ?? null;
         $overdue = $stage === Stages::SHIPPED && $since !== null && $since < $now - self::OVERDUE_DAYS * 86400;
         $tracking = implode(', ', array_filter(array_map(static fn (OpenShipment $sale): string => $sale->tracking, $parcel)));
-        $early = in_array($stage, [Stages::OPEN, Stages::PACKED], true);
-        $actions = '';
+        $items = [];
+
+        foreach ($parcel as $sale) {
+            foreach ($sale->items as $item) {
+                $items[] = esc_html($item['quantity'] . ' × ' . $item['title']);
+            }
+        }
+
+        $place = trim((string) ($first->address[count($first->address) - 2] ?? ''));
+        $cells = [
+            '<strong>' . implode('<br>', array_map('esc_html', $ids)) . '</strong><br><small>' . esc_html($first->orderedAt) . ' · '
+                . ($paid ? esc_html__('paid', 'taxebay') : '<span style="color:#d63638">' . esc_html__('not all paid yet', 'taxebay') . '</span>') . '</small>'
+                . ($overdue ? '<br><small style="color:#d63638">' . esc_html(sprintf(
+                    /* translators: %d: days */
+                    __('shipped %d days ago — ask after it?', 'taxebay'),
+                    intdiv($now - (int) $since, 86400)
+                )) . '</small>' : ''),
+            esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
+            implode('<br>', $items),
+            esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
+            ($tracking === '' ? '—' : '<code>' . esc_html($tracking) . '</code>') . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
+                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html((string) ($carrier['status'] ?? $carrier['stage'] ?? '')) . '</small>'),
+        ];
+
+        $buttons = '';
 
         if ($early) {
-            $actions .= '<form method="get" action="' . esc_url(admin_url('admin-post.php')) . '" target="_blank" style="margin-bottom:6px">'
+            $buttons .= '<a class="button button-small" target="_blank" href="' . esc_url(self::insertUrl($orders)) . '" title="' . esc_attr__('Print insert', 'taxebay') . '" aria-label="' . esc_attr__('Print insert', 'taxebay') . '">' . self::icon('media-text') . '</a> ';
+        }
+
+        if ($early && $labelled) {
+            $buttons .= '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '" data-taxebay-input="' . esc_attr($key . '-label') . '" title="' . esc_attr__('Print label 62 mm', 'taxebay') . '" aria-label="' . esc_attr__('Print label 62 mm', 'taxebay') . '">' . self::icon('printer') . '</button> ';
+        }
+
+        $back = Stages::previous($stage);
+        $next = Stages::next($stage);
+
+        // Without an eBay label, «shipped» comes only with the tracking number reported in the details.
+        if ($next === Stages::SHIPPED && ! $labelled) {
+            $next = null;
+        }
+
+        if ($back !== null) {
+            $buttons .= $this->stageButton($orders, $back, '←', false, sprintf(
+                /* translators: %s: name of a tab */
+                __('Back to «%s»', 'taxebay'),
+                self::stageName($back)
+            ));
+        }
+
+        if ($next !== null) {
+            $buttons .= $this->stageButton($orders, $next, self::stageName($next) . ' →', true, '');
+        }
+
+        return ListPage::row(self::BULK_FORM, $orders, $cells, $buttons, $this->details($parcel, $ids, $orders, $key, $early, $labelled, $paid, $labelLink, $stage));
+    }
+
+    /**
+     * Address, sales, the insert with a project link, the label link, «Mark shipped» and the links to eBay.
+     *
+     * @param non-empty-list<OpenShipment> $parcel
+     * @param list<string> $ids
+     */
+    private function details(array $parcel, array $ids, string $orders, string $key, bool $early, bool $labelled, bool $paid, string $labelLink, string $stage): string
+    {
+        $first = $parcel[0];
+        $lines = [];
+
+        foreach ($parcel as $sale) {
+            $lines[] = esc_html(trim($sale->orderId . ' · ' . $sale->service . ' · ' . ($sale->total === null ? '' : $sale->total . ' ' . $sale->currency), ' ·'));
+        }
+
+        $tools = '';
+
+        if ($early) {
+            $tools .= '<form method="get" action="' . esc_url(admin_url('admin-post.php')) . '" target="_blank" style="margin-bottom:8px">'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::INSERT) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
                 . wp_nonce_field(self::INSERT, '_wpnonce', false, false)
-                . '<input type="url" name="github" style="width:14em;max-width:100%" placeholder="' . esc_attr__('GitHub project (optional)', 'taxebay') . '"> '
-                . get_submit_button(__('Print insert', 'taxebay'), 'small', 'print', false) . '</form>';
+                . '<input type="url" name="github" style="width:22em;max-width:100%" placeholder="' . esc_attr__('GitHub project (optional)', 'taxebay') . '"> '
+                . get_submit_button(__('Print insert with project', 'taxebay'), 'small', 'print', false) . '</form>';
+        }
+
+        if ($early && $labelled) {
+            $tools .= '<p style="margin:0 0 8px"><label for="' . esc_attr($key . '-label') . '">' . esc_html__('DHL label link', 'taxebay') . '</label><br>'
+                . '<input type="url" id="' . esc_attr($key . '-label') . '" list="taxebay-dhl-labels" value="' . esc_attr($labelLink) . '" style="width:22em;max-width:100%" placeholder="' . esc_attr__('from DHL\'s mail', 'taxebay') . '">'
+                . ($labelLink === '' ? ' <small>' . esc_html__('no label matched yet — pick one or paste the link', 'taxebay') . '</small>' : ' <small>' . esc_html__('found in DHL\'s mail (recipient matches)', 'taxebay') . '</small>') . '</p>';
         }
 
         if ($early && ! $labelled) {
@@ -255,75 +296,44 @@ final class ShippingScreen
                 $carriers .= '<option value="' . esc_attr($code) . '">' . esc_html($label) . '</option>';
             }
 
-            $actions .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin-bottom:6px" onsubmit="return confirm(' . esc_attr((string) wp_json_encode(
+            $tools .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(' . esc_attr((string) wp_json_encode(
                 /* translators: %s: eBay order numbers */
                 sprintf(__('Report %s as shipped to eBay? The buyer is notified.', 'taxebay'), implode(', ', $ids))
             )) . ')">'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
                 . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
                 . '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
-                . '<input type="text" name="tracking" style="width:10em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
+                . '<input type="text" name="tracking" style="width:14em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary small', 'submit', false, $paid ? null : ['disabled' => 'disabled']) . '</form>';
         }
 
-        if ($early && $labelled) {
-            $actions .= '<div style="margin-bottom:6px"><input type="url" data-taxebay-link-input list="taxebay-dhl-labels" value="' . esc_attr($labelLink) . '" style="width:14em;max-width:100%" placeholder="' . esc_attr__('DHL label link (from the mail)', 'taxebay') . '"> '
-                . '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '">' . esc_html__('Print label 62 mm', 'taxebay') . '</button>'
-                . ($labelLink === '' ? '' : '<br><small>' . esc_html__('Label found in DHL\'s mail (recipient matches).', 'taxebay') . '</small>') . '</div>';
-        }
+        $links = '<a href="' . esc_url('https://www.ebay.de/sh/ord/details?orderid=' . rawurlencode($first->orderId)) . '" target="_blank" rel="noopener">' . esc_html__('Open at eBay', 'taxebay') . '</a>'
+            . ($stage === Stages::RECEIVED ? ' · <a href="' . esc_url('https://www.ebay.de/fdbk/leave_feedback') . '" target="_blank" rel="noopener">' . esc_html__('Leave feedback', 'taxebay') . '</a>' : '');
 
-
-        $back = Stages::previous($stage);
-        $next = Stages::next($stage);
-
-        // Without an eBay label, «shipped» comes only with the tracking number reported above.
-        if ($next === Stages::SHIPPED && ! $labelled) {
-            $next = null;
-        }
-
-        foreach ([$back, $next] as $target) {
-            if ($target !== null) {
-                $actions .= $this->stageButton($orders, $target, $target === $back ? '← ' . self::stageName($target) : self::stageName($target) . ' →', $target === $next);
-            }
-        }
-
-        $links = [];
-
-        foreach ($ids as $id) {
-            $links[] = '<a href="' . esc_url('https://www.ebay.de/sh/ord/details?orderid=' . rawurlencode($id)) . '" target="_blank" rel="noopener">' . esc_html($id) . '</a>';
-        }
-
-        $rowActions = '<div class="row-actions">'
-            . ($stage === Stages::RECEIVED ? '<span><a href="' . esc_url('https://www.ebay.de/fdbk/leave_feedback') . '" target="_blank" rel="noopener">' . esc_html__('Leave feedback', 'taxebay') . '</a> | </span>' : '')
-            . '<span><a href="' . esc_url('https://www.ebay.de/sh/ord/details?orderid=' . rawurlencode($first->orderId)) . '" target="_blank" rel="noopener">' . esc_html__('Open at eBay', 'taxebay') . '</a></span></div>';
-
-        return '<tr' . ($overdue ? ' style="box-shadow:inset 4px 0 0 #d63638"' : '') . '>'
-            . '<th scope="row" class="check-column"><input type="checkbox" name="orders[]" form="' . self::BULK_FORM . '" value="' . esc_attr($orders) . '" aria-label="' . esc_attr($orders) . '"></th>'
-            . '<td><strong>' . implode('<br>', $links) . '</strong><br><small>' . esc_html($first->orderedAt) . ' · '
-            . ($paid ? esc_html__('paid', 'taxebay') : '<span style="color:#d63638">' . esc_html__('not all paid yet', 'taxebay') . '</span>') . '</small>'
-            . ($overdue ? '<br><small style="color:#d63638">' . esc_html(sprintf(
-                /* translators: %d: days */
-                __('shipped %d days ago — ask after it?', 'taxebay'),
-                intdiv($now - (int) $since, 86400)
-            )) . '</small>' : '')
-            . $rowActions . '</td>'
-            . '<td>' . esc_html($first->buyer) . '<br><small>' . implode('<br>', array_map('esc_html', $first->address)) . '</small></td>'
-            . '<td>' . $items . '<small>' . esc_html($first->service) . '</small></td>'
-            . '<td>' . esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency) . '</td>'
-            . '<td>' . ($tracking === '' ? '—' : '<code>' . esc_html($tracking) . '</code>')
-            . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
-            . ($carrier === null ? '' : '<br><small title="' . esc_attr((string) ($carrier['at'] ?? '')) . '"' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html((string) ($carrier['status'] ?? $carrier['stage'] ?? '')) . '</small>')
-            . '</td>'
-            . '<td>' . $actions . '</td></tr>';
+        return '<div style="display:flex;gap:32px;flex-wrap:wrap;padding-top:8px">'
+            . '<address style="flex:0 1 16em;font-style:normal">' . implode('<br>', array_map('esc_html', $first->address)) . '</address>'
+            . '<div style="flex:0 1 18em">' . implode('<br>', $lines) . '<p>' . $links . '</p></div>'
+            . '<div style="flex:1 1 24em">' . $tools . '</div></div>';
     }
 
-    private function stageButton(string $orders, string $stage, string $label, bool $primary): string
+    // Icons keep the row's buttons inside the fixed actions column of the shared list (D-989).
+    private static function icon(string $name): string
     {
-        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline-block;margin:0 4px 4px 0">'
+        return '<span class="dashicons dashicons-' . esc_attr($name) . '" style="font-size:16px;width:16px;height:16px;vertical-align:middle" aria-hidden="true"></span>';
+    }
+
+    private static function insertUrl(string $orders): string
+    {
+        return add_query_arg(['action' => self::INSERT, 'orders' => $orders, '_wpnonce' => wp_create_nonce(self::INSERT)], admin_url('admin-post.php'));
+    }
+
+    private function stageButton(string $orders, string $stage, string $label, bool $primary, string $title): string
+    {
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
             . '<input type="hidden" name="action" value="' . esc_attr(self::STAGE) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
             . '<input type="hidden" name="stage" value="' . esc_attr($stage) . '">'
             . wp_nonce_field(self::STAGE, '_wpnonce', true, false)
-            . get_submit_button($label, $primary ? 'primary small' : 'small', 'submit', false) . '</form>';
+            . get_submit_button($label, $primary ? 'primary small' : 'small', 'submit', false, $title === '' ? null : ['title' => $title, 'aria-label' => $title]) . '</form> ';
     }
 
     /**

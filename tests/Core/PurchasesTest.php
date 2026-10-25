@@ -69,6 +69,7 @@ final class PurchasesTest extends TestCase
             'tracking'      => ['JJD000390007'],
             'source'        => 'ebay',
             'external_id'   => '05-12345-67890',
+            'number_missing' => false,
         ], $mapper->map($order)->toArray());
         self::assertSame(['05-12345-67890', '05-12345-67890!5000000000001'], $mapper->orderNumbers($order));
         self::assertFalse($mapper->isCancelled($order));

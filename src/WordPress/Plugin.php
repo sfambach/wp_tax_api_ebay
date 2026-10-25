@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.48';
+    public const VERSION    = '0.0.49';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -57,6 +57,11 @@ final class Plugin
         add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
         add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
         add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
+
+        foreach (Stages::ALL as $stage) {
+            add_action('admin_post_' . ShippingScreen::BULK_TO . $stage, $plugin->handleBulkStage(...));
+        }
+
         add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
     }
 
@@ -358,15 +363,30 @@ final class Plugin
         exit;
     }
 
+    /** Ticked rows move to the tab the bulk action names (ListPage's bulk bar posts the handler as its action). */
+    public function handleBulkStage(): void
+    {
+        $this->guard(ShippingScreen::STAGE);
+        $selected = isset($_POST['selected']) ? (array) wp_unslash($_POST['selected']) : [];
+        $this->moveTo(
+            substr(current_action(), strlen('admin_post_' . ShippingScreen::BULK_TO)),
+            self::orderIds(implode(',', array_map(static fn ($one): string => sanitize_text_field((string) $one), $selected)))
+        );
+    }
+
     /** A parcel moves one tab on or back (D-985); eBay knows nothing of it, it is his note only. */
     public function handleStage(): void
     {
         $this->guard(ShippingScreen::STAGE);
-        // One parcel sends a comma list; the bulk form sends one per ticked row.
-        $posted = isset($_POST['orders']) ? wp_unslash($_POST['orders']) : '';
-        $orders = self::orderIds(implode(',', array_map('sanitize_text_field', is_array($posted) ? $posted : [$posted])));
-        $stage = isset($_POST['stage']) ? sanitize_key(wp_unslash($_POST['stage'])) : '';
+        $this->moveTo(
+            isset($_POST['stage']) ? sanitize_key(wp_unslash($_POST['stage'])) : '',
+            self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '')
+        );
+    }
 
+    /** @param list<string> $orders */
+    private function moveTo(string $stage, array $orders): void
+    {
         if (! in_array($stage, Stages::ALL, true) || $orders === []) {
             $this->notice(false, __('Pick an action and at least one parcel.', 'taxebay'));
         } else {
