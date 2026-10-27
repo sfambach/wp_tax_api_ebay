@@ -15,9 +15,22 @@ final class Parcels
     public static function of(array $open): array
     {
         $parcels = [];
+        // One tracking number is one parcel, even when eBay spells the two addresses differently (2026-10-27).
+        $byTracking = [];
 
         foreach ($open as $sale) {
-            $parcels[self::key($sale)][] = $sale;
+            $key = self::key($sale);
+            $sent = $sale->tracking === '' ? '' : mb_strtolower($sale->buyer) . '|' . strtoupper(trim($sale->tracking));
+
+            if ($sent !== '' && isset($byTracking[$sent])) {
+                $key = $byTracking[$sent];
+            }
+
+            if ($sent !== '') {
+                $byTracking[$sent] ??= $key;
+            }
+
+            $parcels[$key][] = $sale;
         }
 
         return array_values($parcels);

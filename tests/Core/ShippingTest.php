@@ -167,6 +167,17 @@ final class ShippingTest extends TestCase
         self::assertFalse(LabelMatch::fits(['MÜLLER', '12345 ORT'], $sale(['Mü', 'Weg 1', '12345 Ort', 'DE'])));
     }
 
+    public function testTheSameTrackingNumberMakesOneParcel(): void
+    {
+        $a = OpenShipment::fromOrder(self::order('A', '2026-10-27'))->withTracking('A005EFF1A10000000447');
+        $other = self::order('B', '2026-10-27');
+        $other['fulfillmentStartInstructions'][0]['shippingStep']['shipTo']['contactAddress']['addressLine2'] = 'Hinterhaus';
+        $b = OpenShipment::fromOrder($other)->withTracking('A005EFF1A10000000447');
+
+        self::assertCount(2, Parcels::of([$a, OpenShipment::fromOrder($other)]));
+        self::assertSame([['A', 'B']], array_map(static fn (array $parcel): array => array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel), Parcels::of([$a, $b])));
+    }
+
     public function testAPartialRefundLowersTheTotalAndKeepsTheOrderPaid(): void
     {
         $order = ['orderPaymentStatus' => 'PARTIALLY_REFUNDED', 'paymentSummary' => ['refunds' => [
