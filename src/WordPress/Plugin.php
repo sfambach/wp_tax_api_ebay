@@ -28,8 +28,10 @@ use TaxEbay\Core\Shipping\Stages;
 final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
+    /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
+    private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.60';
+    public const VERSION    = '0.0.61';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -611,6 +613,43 @@ final class Plugin
                 _n('eBay did not answer about inquiries for %d order; the last state stays.', 'eBay did not answer about inquiries for %d orders; the last state stays.', $unread, 'taxebay'),
                 $unread
             ));
+        }
+    }
+
+    /**
+     * The scheduled check of the inbox fetch: open buyer inquiries and cases of the parcels in «shipped», each at most
+     * every DISPUTE_CHECK_SECONDS, so the page has them without a click (his expectation, 2026-10-27). Never throws —
+     * the purchases and sales of the same run must not fail over it.
+     */
+    public static function checkDisputes(string $token): void
+    {
+        try {
+            $client = self::shippingClient();
+            $stages = Settings::stages();
+            $noted = Settings::disputes();
+            $found = [];
+
+            foreach (Parcels::of($client->open($token, self::labelledSince())) as $parcel) {
+                if (Stages::of($parcel, $stages, time()) !== Stages::SHIPPED) {
+                    continue;
+                }
+
+                foreach ($parcel as $sale) {
+                    if ((int) ($noted[$sale->orderId]['at'] ?? 0) > time() - self::DISPUTE_CHECK_SECONDS) {
+                        continue;
+                    }
+
+                    $open = $client->disputes($token, $sale->orderId);
+
+                    if ($open !== null) {
+                        $found[$sale->orderId] = $open;
+                    }
+                }
+            }
+
+            Settings::saveDisputes($found, time());
+        } catch (EbayApiException) {
+            return;
         }
     }
 

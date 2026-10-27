@@ -51,6 +51,7 @@ final class EbaySource implements FetchingSource
         $salesFrom = get_option(self::SALES_STARTED, '') === '' ? null : $cursor;
         $sales = (new SaleFeed(new SalesClient($keys->environment, $http)))->run($token, $salesFrom, $now);
         update_option(self::SALES_STARTED, $now->format(DATE_ATOM), false);
+        Plugin::checkDisputes($token);
 
         return new FetchBatch([...$purchases->proposals, ...$sales], $purchases->cursor);
     }
