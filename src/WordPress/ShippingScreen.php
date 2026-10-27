@@ -421,7 +421,7 @@ final class ShippingScreen
             return $status;
         }
 
-        return ($carrier['known'] ?? true) === false ? __('not scanned yet', 'taxebay') : (string) ($carrier['stage'] ?? '');
+        return ($carrier['known'] ?? true) === false ? __('unknown to DHL', 'taxebay') : (string) ($carrier['stage'] ?? '');
     }
 
     // Icons keep the row's buttons inside the fixed actions column of the shared list (D-989).

@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.55';
+    public const VERSION    = '0.0.56';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -580,6 +580,7 @@ final class Plugin
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
         $stages = Settings::stages();
         $list = isset($_GET['parcels']) ? sanitize_text_field(wp_unslash($_GET['parcels'])) : '';
+        $failed = [];
 
         foreach (explode(';', $list) as $parcel) {
             if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) !== 1) {
@@ -589,6 +590,8 @@ final class Plugin
             $word = apply_filters('taxmod_dhl_tracking', null, $parts[2], 'refresh');
 
             if (! is_array($word) || ! isset($word['stage'])) {
+                $failed[] = $parts[2];
+
                 continue;
             }
 
@@ -605,6 +608,15 @@ final class Plugin
                     Settings::saveStage([$orderId], $target, time());
                 }
             }
+        }
+
+        // No answer keeps the last one; say so instead of leaving him to wonder (2026-10-27).
+        if ($failed !== []) {
+            $this->notice(false, sprintf(
+                /* translators: %s: tracking numbers */
+                __('DHL gave no answer for %s (no key, daily budget used up or a DHL error); the last state stays.', 'taxebay'),
+                implode(', ', $failed)
+            ));
         }
 
         $open = isset($_GET[ShippingScreen::OPEN_HISTORY]) ? sanitize_text_field(wp_unslash($_GET[ShippingScreen::OPEN_HISTORY])) : '';
