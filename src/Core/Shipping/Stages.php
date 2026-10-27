@@ -17,7 +17,7 @@ final class Stages
 
     public const ALL = [self::OPEN, self::PACKED, self::SHIPPED, self::RECEIVED];
 
-    /** A label bought at eBay with no stage of his stays in «open» this long, then it is taken as sent. */
+    /** A label bought at eBay with no stage of his stays in «open» this long, then it shows as shipped (2026-10-27). */
     public const LABELLED_OPEN_SECONDS = 3 * 86400;
 
     /**
@@ -25,7 +25,7 @@ final class Stages
      * @param array<string, array{stage: string, at: int}> $noted order id → his note
      * @return string|null null: an old eBay label he never noted — it shows nowhere
      */
-    public static function of(array $parcel, array $noted, int $now): ?string
+    public static function of(array $parcel, array $noted, int $now): string
     {
         foreach ($parcel as $sale) {
             if (isset($noted[$sale->orderId]) && in_array($noted[$sale->orderId]['stage'], self::ALL, true)) {
@@ -37,7 +37,7 @@ final class Stages
             $modified = strtotime($sale->modifiedAt);
 
             if ($sale->labelled && $modified !== false && $modified < $now - self::LABELLED_OPEN_SECONDS) {
-                return null;
+                return self::SHIPPED;
             }
         }
 

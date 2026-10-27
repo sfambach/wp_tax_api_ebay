@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.54';
+    public const VERSION    = '0.0.55';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -63,6 +63,7 @@ final class Plugin
         }
 
         add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
+        add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
     }
 
     /**
@@ -554,36 +555,62 @@ final class Plugin
     }
 
     /**
-     * What the DHL module (wp_tax_api_dhl, filter taxmod_dhl_tracking) knows of each tracking number, and the stage
-     * it moves the parcel to: «shipped» or «delivered» move it on, never back. Without the module nothing happens.
-     *
      * @param list<OpenShipment> $sales
-     * @param array<string, array{stage: string, at: int}> $stages
      * @param array<string, array<string, mixed>> $carrier
      */
-    private static function followCarrier(array $sales, string $tab, array &$stages, array &$carrier): void
+    private static function lastCarrierWord(array $sales, array &$carrier): void
     {
         foreach ($sales as $sale) {
             $number = trim(explode(',', $sale->tracking)[0]);
+            $word = $number === '' ? null : apply_filters('taxmod_dhl_tracking', null, $number);
 
-            if ($number === '') {
+            if (is_array($word) && isset($word['stage'])) {
+                $carrier[$sale->orderId] = $word;
+            }
+        }
+    }
+
+    /**
+     * Asks DHL anew for the given parcels and moves them on: a scan takes «packed» to «shipped», delivery takes «shipped»
+     * to «received» — only those two stages ask DHL (his rule, 2026-10-27).
+     */
+    public function handleDhlRefresh(): void
+    {
+        $this->guard(ShippingScreen::DHL_REFRESH);
+        $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
+        $stages = Settings::stages();
+        $list = isset($_GET['parcels']) ? sanitize_text_field(wp_unslash($_GET['parcels'])) : '';
+
+        foreach (explode(';', $list) as $parcel) {
+            if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) !== 1) {
                 continue;
             }
 
-            $word = apply_filters('taxmod_dhl_tracking', null, $number);
+            $word = apply_filters('taxmod_dhl_tracking', null, $parts[2], 'refresh');
 
             if (! is_array($word) || ! isset($word['stage'])) {
                 continue;
             }
 
-            $carrier[$sale->orderId] = $word;
-            $target = Stages::afterCarrier($stages[$sale->orderId]['stage'] ?? $tab, (string) $word['stage']);
+            foreach (explode(',', $parts[1]) as $orderId) {
+                $current = $stages[$orderId]['stage'] ?? $tab;
 
-            if ($target !== null) {
-                Settings::saveStage([$sale->orderId], $target, time());
-                $stages[$sale->orderId] = ['stage' => $target, 'at' => time()];
+                if (! in_array($current, [Stages::PACKED, Stages::SHIPPED], true)) {
+                    continue;
+                }
+
+                $target = Stages::afterCarrier($current, (string) $word['stage']);
+
+                if ($target !== null) {
+                    Settings::saveStage([$orderId], $target, time());
+                }
             }
         }
+
+        $open = isset($_GET[ShippingScreen::OPEN_HISTORY]) ? sanitize_text_field(wp_unslash($_GET[ShippingScreen::OPEN_HISTORY])) : '';
+        $back = remove_query_arg(ShippingScreen::OPEN_HISTORY, wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        wp_safe_redirect($open === '' ? $back : add_query_arg(ShippingScreen::OPEN_HISTORY, rawurlencode($open), $back));
+        exit;
     }
 
     /** Orders eBay counts as shipped stay readable as long as his stage notes last (D-985). */
@@ -615,11 +642,8 @@ final class Plugin
 
         $tracked = $client->tracked($token, array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId]))));
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
-
-        // DHL only for parcels on their way: a scan moves «packed» on to «shipped», «delivered» moves «shipped» on (his rule, 2026-10-27).
-        if (in_array($tab, [Stages::PACKED, Stages::SHIPPED], true)) {
-            self::followCarrier($tracked, $tab, $stages, $carrier);
-        }
+        // Only what DHL said last; asking anew is a click away (his wish, 2026-10-27), so the page loads fast.
+        self::lastCarrierWord($tracked, $carrier);
 
         return array_map(static fn (OpenShipment $sale): OpenShipment => $byId[$sale->orderId] ?? $sale, $open);
     }

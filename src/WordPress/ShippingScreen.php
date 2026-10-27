@@ -34,6 +34,9 @@ final class ShippingScreen
 
     /** Bulk moves post to `admin_post_<this><stage>`; ListPage's bulk bar names the handler in its action field. */
     public const BULK_TO = 'taxebay_to_';
+    public const DHL_REFRESH = 'taxebay_dhl_refresh';
+    /** Query argument naming the parcel whose history opens after a refresh. */
+    public const OPEN_HISTORY = 'taxebay_open';
 
     /**
      * The shipping list in the modeller's shared list page (D-989): tabs by stage (D-985), search and filters, rows with
@@ -72,11 +75,7 @@ final class ShippingScreen
         $byStage = array_fill_keys(Stages::ALL, []);
 
         foreach (Parcels::of($open) as $parcel) {
-            $stage = Stages::of($parcel, $stages, $now);
-
-            if ($stage !== null) {
-                $byStage[$stage][] = $parcel;
-            }
+            $byStage[Stages::of($parcel, $stages, $now)][] = $parcel;
         }
 
         $tabs = [];
@@ -115,6 +114,8 @@ final class ShippingScreen
         if ($rows === '') {
             $rows = '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nothing here.', 'taxebay') . '</td></tr>';
         }
+
+        $html .= self::refreshAll($shown, $tab);
 
         return $html . ListPage::table([
             self::column($list, 'date', __('Order', 'taxebay'), '12em'),
@@ -221,8 +222,13 @@ final class ShippingScreen
             esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
-            ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
-                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>'),
+            ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
+                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>'
+                    . (isset($carrier['checked_at']) && is_numeric($carrier['checked_at']) ? '<br><small style="color:#646970">' . esc_html(sprintf(
+                        /* translators: %s: date and time */
+                        __('as of %s', 'taxebay'),
+                        wp_date('d.m. H:i', (int) $carrier['checked_at'])
+                    )) . '</small>' : '')),
         ];
 
         $buttons = '';
@@ -322,14 +328,18 @@ final class ShippingScreen
     }
 
     /**
-     * The tracking number; with DHL's events it opens to the parcel's history in the row (his wish, 2026-10-27).
+     * The tracking number: a click asks DHL anew and opens the parcel's history in the row (his wish, 2026-10-27). The
+     * page itself shows only what DHL said last, so it loads fast.
      *
      * @param array<string, mixed>|null $carrier `mixed`: the DHL module's array; `events` came with its 0.0.8
+     * @param list<string> $ids
      */
-    private static function trackingHistory(string $tracking, ?array $carrier): string
+    private static function trackingHistory(string $tracking, ?array $carrier, array $ids, string $stage): string
     {
         $events = array_filter((array) ($carrier['events'] ?? []), 'is_array');
-        $number = '<code>' . esc_html($tracking) . '</code>';
+        $open = isset($_GET[self::OPEN_HISTORY]) && sanitize_text_field(wp_unslash($_GET[self::OPEN_HISTORY])) === $ids[0];
+        $number = '<a href="' . esc_url(self::refreshUrl([self::parcelArgument($ids, $tracking)], $stage, $ids[0])) . '" title="'
+            . esc_attr__('Ask DHL now and show the history', 'taxebay') . '"><code>' . esc_html($tracking) . '</code></a>';
 
         if ($events === []) {
             return $number;
@@ -346,8 +356,55 @@ final class ShippingScreen
                 . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>') . '</li>';
         }
 
-        return '<details><summary style="cursor:pointer" title="' . esc_attr__('Show the parcel\'s history', 'taxebay') . '">' . $number . '</summary>'
+        return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer">' . esc_html__('History', 'taxebay') . '</summary>'
             . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . $list . '</ol></details>';
+    }
+
+    /**
+     * «Refresh DHL» for every parcel of the tab with a tracking number; only where DHL can move it on.
+     *
+     * @param list<non-empty-list<OpenShipment>> $parcels
+     */
+    private static function refreshAll(array $parcels, string $tab): string
+    {
+        if (! in_array($tab, [Stages::PACKED, Stages::SHIPPED], true)) {
+            return '';
+        }
+
+        $arguments = [];
+
+        foreach ($parcels as $parcel) {
+            $tracking = trim(explode(',', $parcel[0]->tracking)[0]);
+
+            if ($tracking !== '') {
+                $arguments[] = self::parcelArgument(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel), $tracking);
+            }
+        }
+
+        if ($arguments === []) {
+            return '';
+        }
+
+        return '<p style="text-align:right;margin:0 0 8px"><a class="button" href="' . esc_url(self::refreshUrl($arguments, $tab, '')) . '">'
+            . esc_html__('Refresh DHL', 'taxebay') . '</a></p>';
+    }
+
+    /** @param list<string> $ids */
+    private static function parcelArgument(array $ids, string $tracking): string
+    {
+        return implode(',', $ids) . ':' . $tracking;
+    }
+
+    /** @param list<string> $parcels «order,order:tracking» each */
+    private static function refreshUrl(array $parcels, string $tab, string $open): string
+    {
+        return add_query_arg(array_filter([
+            'action'          => self::DHL_REFRESH,
+            'parcels'         => implode(';', $parcels),
+            'tab'             => $tab,
+            self::OPEN_HISTORY => $open,
+            '_wpnonce'        => wp_create_nonce(self::DHL_REFRESH),
+        ]), admin_url('admin-post.php'));
     }
 
     /**

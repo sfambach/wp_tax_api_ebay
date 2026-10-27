@@ -109,7 +109,7 @@ final class ShippingTest extends TestCase
 
         self::assertSame(Stages::OPEN, Stages::of([OpenShipment::fromOrder(self::order('N', '2026-10-01'))], [], $now));
         self::assertSame(Stages::OPEN, Stages::of([OpenShipment::fromOrder($fresh)], [], $now));
-        self::assertNull(Stages::of([OpenShipment::fromOrder($old)], [], $now));
+        self::assertSame(Stages::SHIPPED, Stages::of([OpenShipment::fromOrder($old)], [], $now));
         self::assertSame(Stages::RECEIVED, Stages::of([OpenShipment::fromOrder($old)], ['O' => ['stage' => Stages::RECEIVED, 'at' => $now]], $now));
         self::assertSame(Stages::SHIPPED, Stages::next(Stages::PACKED));
         self::assertNull(Stages::next(Stages::RECEIVED));
