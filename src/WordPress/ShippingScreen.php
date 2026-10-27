@@ -222,7 +222,7 @@ final class ShippingScreen
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
             ($tracking === '' ? '—' : '<code>' . esc_html($tracking) . '</code>') . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
-                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html((string) ($carrier['status'] ?? $carrier['stage'] ?? '')) . '</small>'),
+                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>'),
         ];
 
         $buttons = '';
@@ -319,6 +319,23 @@ final class ShippingScreen
             . '<address style="flex:0 1 16em;font-style:normal">' . implode('<br>', array_map('esc_html', $first->address)) . '</address>'
             . '<div style="flex:0 1 18em">' . implode('<br>', $lines) . '<p>' . $links . '</p></div>'
             . '<div style="flex:1 1 24em">' . $tools . '</div></div>';
+    }
+
+    /**
+     * The DHL module's word for the parcel; since its 0.0.7 a number DHL has not scanned yet comes as known=false with
+     * empty status fields — eBay's «tracking number given».
+     *
+     * @param array<string, mixed> $carrier `mixed`: the module's array
+     */
+    private static function carrierWord(array $carrier): string
+    {
+        $status = trim((string) ($carrier['status'] ?? ''));
+
+        if ($status !== '') {
+            return $status;
+        }
+
+        return ($carrier['known'] ?? true) === false ? __('not scanned yet', 'taxebay') : (string) ($carrier['stage'] ?? '');
     }
 
     // Icons keep the row's buttons inside the fixed actions column of the shared list (D-989).

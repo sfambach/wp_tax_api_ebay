@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       Taxmod API eBay
  * Description:       Connects the owner's eBay account and offers eBay sales and purchases as proposals for the Taxonomy Modeller; only picked items are written.
- * Version:           0.0.51
+ * Version:           0.0.52
  * Requires at least: 6.9
  * Requires PHP:      8.2
  * Author:            Stefan Fambach (SteFam), Claude (Anthropic AI)
