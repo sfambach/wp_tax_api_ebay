@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.52';
+    public const VERSION    = '0.0.53';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 

@@ -221,7 +221,7 @@ final class ShippingScreen
             esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
-            ($tracking === '' ? '—' : '<code>' . esc_html($tracking) . '</code>') . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
+            ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
                 . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>'),
         ];
 
@@ -319,6 +319,35 @@ final class ShippingScreen
             . '<address style="flex:0 1 16em;font-style:normal">' . implode('<br>', array_map('esc_html', $first->address)) . '</address>'
             . '<div style="flex:0 1 18em">' . implode('<br>', $lines) . '<p>' . $links . '</p></div>'
             . '<div style="flex:1 1 24em">' . $tools . '</div></div>';
+    }
+
+    /**
+     * The tracking number; with DHL's events it opens to the parcel's history in the row (his wish, 2026-10-27).
+     *
+     * @param array<string, mixed>|null $carrier `mixed`: the DHL module's array; `events` came with its 0.0.8
+     */
+    private static function trackingHistory(string $tracking, ?array $carrier): string
+    {
+        $events = array_filter((array) ($carrier['events'] ?? []), 'is_array');
+        $number = '<code>' . esc_html($tracking) . '</code>';
+
+        if ($events === []) {
+            return $number;
+        }
+
+        $list = '';
+
+        foreach ($events as $event) {
+            $when = (string) ($event['at'] ?? '');
+            $time = strtotime($when);
+            $text = trim((string) ($event['description'] ?? '')) ?: (string) ($event['status'] ?? '');
+            $place = trim((string) ($event['place'] ?? ''));
+            $list .= '<li><small>' . esc_html($time === false ? $when : wp_date('d.m. H:i', $time)) . '</small> ' . esc_html($text)
+                . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>') . '</li>';
+        }
+
+        return '<details><summary style="cursor:pointer" title="' . esc_attr__('Show the parcel\'s history', 'taxebay') . '">' . $number . '</summary>'
+            . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . $list . '</ol></details>';
     }
 
     /**
