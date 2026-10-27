@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.53';
+    public const VERSION    = '0.0.54';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -561,7 +561,7 @@ final class Plugin
      * @param array<string, array{stage: string, at: int}> $stages
      * @param array<string, array<string, mixed>> $carrier
      */
-    private static function followCarrier(array $sales, array &$stages, array &$carrier): void
+    private static function followCarrier(array $sales, string $tab, array &$stages, array &$carrier): void
     {
         foreach ($sales as $sale) {
             $number = trim(explode(',', $sale->tracking)[0]);
@@ -577,7 +577,7 @@ final class Plugin
             }
 
             $carrier[$sale->orderId] = $word;
-            $target = Stages::afterCarrier($stages[$sale->orderId]['stage'] ?? Stages::OPEN, (string) $word['stage']);
+            $target = Stages::afterCarrier($stages[$sale->orderId]['stage'] ?? $tab, (string) $word['stage']);
 
             if ($target !== null) {
                 Settings::saveStage([$sale->orderId], $target, time());
@@ -615,7 +615,11 @@ final class Plugin
 
         $tracked = $client->tracked($token, array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId]))));
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
-        self::followCarrier($tracked, $stages, $carrier);
+
+        // DHL only for parcels on their way: a scan moves «packed» on to «shipped», «delivered» moves «shipped» on (his rule, 2026-10-27).
+        if (in_array($tab, [Stages::PACKED, Stages::SHIPPED], true)) {
+            self::followCarrier($tracked, $tab, $stages, $carrier);
+        }
 
         return array_map(static fn (OpenShipment $sale): OpenShipment => $byId[$sale->orderId] ?? $sale, $open);
     }
