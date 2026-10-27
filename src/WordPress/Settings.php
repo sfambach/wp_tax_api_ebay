@@ -21,6 +21,8 @@ final class Settings
     public const SCHEDULE = 'taxmod_ebay_schedule';
     public const INSERT_FORMAT = 'taxmod_ebay_insert_format';
     public const STAGES = 'taxmod_ebay_stages';
+    /** Open buyer inquiries and cases as eBay named them at the last refresh, per order. */
+    public const DISPUTES = 'taxmod_ebay_disputes';
     private const PACKED_BEFORE_STAGES = 'taxmod_ebay_packed';
     public const INSERT_A6 = 'a6';
     public const INSERT_LABEL = 'label62';
@@ -207,6 +209,30 @@ final class Settings
 
         update_option(self::STAGES, $kept, false);
         delete_option(self::PACKED_BEFORE_STAGES);
+    }
+
+    /** @return array<string, array{open: list<array{kind: string, id: string, status: string, respond_by: string}>, at: int}> order id → last word */
+    public static function disputes(): array
+    {
+        $stored = get_option(self::DISPUTES, []);
+
+        return is_array($stored) ? $stored : [];
+    }
+
+    /**
+     * Keeps eBay's answer from a refresh; notes older than the stage notes go.
+     *
+     * @param array<string, list<array{kind: string, id: string, status: string, respond_by: string}>> $byOrder
+     */
+    public static function saveDisputes(array $byOrder, int $now): void
+    {
+        $kept = array_filter(self::disputes(), static fn (array $note): bool => (int) ($note['at'] ?? 0) > $now - self::STAGE_DAYS * 86400);
+
+        foreach ($byOrder as $orderId => $open) {
+            $kept[$orderId] = ['open' => $open, 'at' => $now];
+        }
+
+        update_option(self::DISPUTES, $kept, false);
     }
 
     /** «Delete access data» (D-981): the app keys go too; constants in wp-config.php stay, they are his file. */

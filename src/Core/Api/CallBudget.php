@@ -18,6 +18,7 @@ final class CallBudget implements HttpTransport
         'fulfillment' => 10_000, // Fulfillment API, order resource: 100,000
         'finances'    => 1_500,  // Finances API: 15,000
         'notification' => 200,   // Notification API, public key: 10,000 — a forged signature must not burn it
+        'postorder'   => 500,    // Post-Order API, inquiries and cases: not in eBay's table, kept low
     ];
 
     public function __construct(
@@ -59,6 +60,7 @@ final class CallBudget implements HttpTransport
             str_contains($path, '/sell/fulfillment/')   => 'fulfillment',
             str_contains($path, '/sell/finances/')      => 'finances',
             str_contains($path, '/commerce/notification/') => 'notification',
+            str_contains($path, '/post-order/')         => 'postorder',
             default => throw new EbayApiException('No call budget for ' . $path),
         };
     }

@@ -79,6 +79,7 @@ final class CallBudgetTest extends TestCase
             'https://apiz.ebay.com/commerce/identity/v1/user/'             => 'identity',
             'https://api.sandbox.ebay.com/ws/api.dll'                      => 'trading',
             'https://api.ebay.com/sell/fulfillment/v1/order?limit=200'     => 'fulfillment',
+            'https://api.ebay.com/post-order/v2/inquiry/search?order_id=1' => 'postorder',
         ] as $url => $family) {
             self::assertSame($family, CallBudget::family($url));
         }

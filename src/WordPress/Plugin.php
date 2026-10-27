@@ -27,12 +27,9 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
-    /** Set when eBay did not tell this view about inquiries and cases; the page says so. */
-    private static bool $disputesUnread = false;
-
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.59';
+    public const VERSION    = '0.0.60';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -283,10 +280,6 @@ final class Plugin
             }
 
             $labels = self::dhlLabels();
-
-            if (self::$disputesUnread) {
-                $this->notice(false, __('eBay did not answer about buyer inquiries and cases; open ones may be missing here.', 'taxebay'));
-            }
 
             print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : [], $disputes);
         });
@@ -580,6 +573,48 @@ final class Plugin
     }
 
     /**
+     * Asks eBay for open buyer inquiries and cases on the refreshed orders and keeps the answer for the page.
+     *
+     * @param list<string> $orderIds
+     */
+    private function refreshDisputes(array $orderIds): void
+    {
+        if ($orderIds === []) {
+            return;
+        }
+
+        $found = [];
+        $unread = 0;
+
+        try {
+            $token = self::accessToken();
+            $client = self::shippingClient();
+
+            foreach ($orderIds as $orderId) {
+                $open = $client->disputes($token, $orderId);
+
+                if ($open === null) {
+                    ++$unread;
+                } else {
+                    $found[$orderId] = $open;
+                }
+            }
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            $this->notice(false, __('eBay buyer inquiries could not be read:', 'taxebay') . ' ' . $failure->getMessage());
+        }
+
+        Settings::saveDisputes($found, time());
+
+        if ($unread > 0) {
+            $this->notice(false, sprintf(
+                /* translators: %d: number of orders */
+                _n('eBay did not answer about inquiries for %d order; the last state stays.', 'eBay did not answer about inquiries for %d orders; the last state stays.', $unread, 'taxebay'),
+                $unread
+            ));
+        }
+    }
+
+    /**
      * Asks DHL anew for the given parcels and moves them on: a scan takes «packed» to «shipped», delivery takes «shipped»
      * to «received» — only those two stages ask DHL (his rule, 2026-10-27).
      */
@@ -591,10 +626,14 @@ final class Plugin
         $list = isset($_GET['parcels']) ? sanitize_text_field(wp_unslash($_GET['parcels'])) : '';
         $failed = [];
 
+        $asked = [];
+
         foreach (array_slice(explode(';', $list), 0, ShippingScreen::REFRESH_AT_ONCE) as $parcel) {
             if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) !== 1) {
                 continue;
             }
+
+            array_push($asked, ...explode(',', $parts[1]));
 
             $word = apply_filters('taxmod_dhl_tracking', null, $parts[2], 'refresh');
 
@@ -618,6 +657,8 @@ final class Plugin
                 }
             }
         }
+
+        $this->refreshDisputes($asked);
 
         // No answer keeps the last one; say so instead of leaving him to wonder (2026-10-27).
         if ($failed !== []) {
@@ -667,25 +708,12 @@ final class Plugin
         // Only what DHL said last; asking anew is a click away (his wish, 2026-10-27), so the page loads fast.
         self::lastCarrierWord($tracked, $carrier);
 
-        // A buyer asks after a parcel once it is on its way; one hour is fresh enough and keeps the page fast.
-        if (in_array($tab, [Stages::SHIPPED, Stages::RECEIVED], true)) {
-            foreach ($tracked as $sale) {
-                $key = 'taxebay_disputes_' . md5($sale->orderId);
-                $found = get_transient($key);
+        // What eBay said at the last refresh; asking anew is the refresh's job (his rule, 2026-10-27).
+        $stored = Settings::disputes();
 
-                if ($found === 'unread') {
-                    $found = null;
-                } elseif (! is_array($found)) {
-                    $found = $client->disputes($token, $sale->orderId);
-                    // A failed read is not «nothing open»; it is asked again after ten minutes.
-                    set_transient($key, $found ?? 'unread', $found === null ? 10 * MINUTE_IN_SECONDS : HOUR_IN_SECONDS);
-                }
-
-                if ($found === null) {
-                    self::$disputesUnread = true;
-                } elseif ($found !== []) {
-                    $disputes[$sale->orderId] = $found;
-                }
+        foreach ($tracked as $sale) {
+            if (($stored[$sale->orderId]['open'] ?? []) !== []) {
+                $disputes[$sale->orderId] = $stored[$sale->orderId]['open'];
             }
         }
 

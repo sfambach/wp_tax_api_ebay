@@ -431,7 +431,7 @@ final class ShippingScreen
         $arguments = array_slice($arguments, 0, self::REFRESH_AT_ONCE);
 
         return '<p style="text-align:right;margin:0 0 8px"><a class="button" href="' . esc_url(self::refreshUrl($arguments, $tab, '')) . '">'
-            . esc_html__('Refresh DHL', 'taxebay') . '</a></p>';
+            . esc_html__('Refresh DHL and eBay', 'taxebay') . '</a></p>';
     }
 
     /** @param list<string> $ids */
