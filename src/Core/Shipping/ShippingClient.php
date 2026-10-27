@@ -121,6 +121,48 @@ final class ShippingClient
         return implode(', ', array_unique($numbers));
     }
 
+    /**
+     * Open buyer inquiries and cases on an order — «item not received» and the like (Post-Order API; Stefan 2026-10-27:
+     * the conflict on 24-15238-03470 was not shown). The order search does not carry them. Closed ones are left out.
+     *
+     * ⚠️ Follows eBay's documentation; not measured against a live inquiry yet. null when eBay did not answer.
+     *
+     * @return list<array{kind: string, id: string, status: string, respond_by: string}>|null
+     */
+    public function disputes(string $accessToken, string $orderId): ?array
+    {
+        $open = [];
+
+        foreach (['inquiry' => 'inquiryStatusEnum', 'casemanagement' => 'caseStatusEnum'] as $kind => $statusField) {
+            $response = $this->http->send(new HttpRequest(
+                'GET',
+                $this->environment->apiHost() . '/post-order/v2/' . $kind . '/search?' . http_build_query(['order_id' => $orderId], '', '&', PHP_QUERY_RFC3986),
+                ['Authorization' => 'IAF ' . $accessToken, 'Accept' => 'application/json', 'Content-Type' => 'application/json', 'X-EBAY-C-MARKETPLACE-ID' => 'EBAY_DE']
+            ));
+
+            if ($response->status !== 200) {
+                return null;
+            }
+
+            foreach ((array) ($response->json()['members'] ?? []) as $member) {
+                $status = strtoupper((string) ($member[$statusField] ?? $member['status'] ?? ''));
+
+                if ($status === '' || str_contains($status, 'CLOSED')) {
+                    continue;
+                }
+
+                $open[] = [
+                    'kind'       => $kind === 'inquiry' ? 'inquiry' : 'case',
+                    'id'         => (string) ($member['inquiryId'] ?? $member['caseId'] ?? ''),
+                    'status'     => $status,
+                    'respond_by' => substr((string) ($member['respondByDate']['value'] ?? ''), 0, 10),
+                ];
+            }
+        }
+
+        return $open;
+    }
+
     /** @param list<array{line_item_id: string, quantity: int}> $items */
     public function markShipped(string $accessToken, string $orderId, array $items, string $carrier, string $trackingNumber, string $shippedAt): void
     {

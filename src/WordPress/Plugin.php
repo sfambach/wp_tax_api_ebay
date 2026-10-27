@@ -27,9 +27,12 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class Plugin
 {
+    /** Set when eBay did not tell this view about inquiries and cases; the page says so. */
+    private static bool $disputesUnread = false;
+
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.57';
+    public const VERSION    = '0.0.58';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -271,15 +274,21 @@ final class Plugin
             );
             $stages = Settings::stages();
             $carrier = [];
+            $disputes = [];
 
             try {
-                $open = self::shownWithTracking(self::accessToken(), $tab, $stages, $list, $carrier);
+                $open = self::shownWithTracking(self::accessToken(), $tab, $stages, $list, $carrier, $disputes);
             } catch (EbayApiException | SecretDoesNotOpen $failure) {
                 $open = $failure->getMessage();
             }
 
             $labels = self::dhlLabels();
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : []);
+
+            if (self::$disputesUnread) {
+                $this->notice(false, __('eBay did not answer about buyer inquiries and cases; open ones may be missing here.', 'taxebay'));
+            }
+
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : [], $disputes);
         });
 
         if ($hook !== false) {
@@ -636,9 +645,10 @@ final class Plugin
      *
      * @param array<string, array{stage: string, at: int}> $stages updated where the carrier moved a parcel on
      * @param array<string, array<string, mixed>> $carrier order id → the DHL module's word on it; `mixed` is its array
+     * @param array<string, list<array{kind: string, id: string, status: string, respond_by: string}>> $disputes order id → open inquiries and cases
      * @return list<OpenShipment>
      */
-    private static function shownWithTracking(string $token, string $tab, array &$stages, ParcelList $list, array &$carrier): array
+    private static function shownWithTracking(string $token, string $tab, array &$stages, ParcelList $list, array &$carrier, array &$disputes = []): array
     {
         $client = self::shippingClient();
         $open = $client->open($token, self::labelledSince());
@@ -656,6 +666,28 @@ final class Plugin
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
         // Only what DHL said last; asking anew is a click away (his wish, 2026-10-27), so the page loads fast.
         self::lastCarrierWord($tracked, $carrier);
+
+        // A buyer asks after a parcel once it is on its way; one hour is fresh enough and keeps the page fast.
+        if (in_array($tab, [Stages::SHIPPED, Stages::RECEIVED], true)) {
+            foreach ($tracked as $sale) {
+                $key = 'taxebay_disputes_' . md5($sale->orderId);
+                $found = get_transient($key);
+
+                if (! is_array($found)) {
+                    $found = $client->disputes($token, $sale->orderId);
+                    // A failed read is not cached as «nothing open»: it is asked again next time.
+                    if ($found !== null) {
+                        set_transient($key, $found, HOUR_IN_SECONDS);
+                    }
+                }
+
+                if ($found === null) {
+                    self::$disputesUnread = true;
+                } elseif ($found !== []) {
+                    $disputes[$sale->orderId] = $found;
+                }
+            }
+        }
 
         return array_map(static fn (OpenShipment $sale): OpenShipment => $byId[$sale->orderId] ?? $sale, $open);
     }

@@ -50,8 +50,9 @@ final class ShippingScreen
      * @param list<array{cart: string, date: string, links: list<string>}> $dhlLabels label links tax_mail found in DHL's mails, newest first
      * @param array<string, array<string, mixed>> $carrier order id → what the DHL module says; `mixed`: its array
      * @param array<string, string> $labelLinks order id → the DHL label link whose recipient is this parcel's
+     * @param array<string, list<array{kind: string, id: string, status: string, respond_by: string}>> $disputes order id → open inquiries and cases
      */
-    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = []): string
+    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = [], array $disputes = []): string
     {
         if (! method_exists(ListPage::class, 'searchBox')) {
             return '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1><div class="notice notice-error inline"><p>'
@@ -110,7 +111,7 @@ final class ShippingScreen
         $rows = '';
 
         foreach ($shown as $parcel) {
-            $rows .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null, $labelLinks[$parcel[0]->orderId] ?? '');
+            $rows .= $this->row($parcel, $seller, $tab, $stages, $now, $carrier[$parcel[0]->orderId] ?? null, $labelLinks[$parcel[0]->orderId] ?? '', array_merge(...array_map(static fn (OpenShipment $sale): array => $disputes[$sale->orderId] ?? [], $parcel)));
         }
 
         if ($rows === '') {
@@ -191,8 +192,9 @@ final class ShippingScreen
      * @param non-empty-list<OpenShipment> $parcel sales to one buyer at one address — one parcel
      * @param array<string, array{stage: string, at: int}> $stages
      * @param array<string, mixed>|null $carrier the DHL module's word on the tracking number
+     * @param list<array{kind: string, id: string, status: string, respond_by: string}> $disputes open inquiries and cases of the parcel's orders
      */
-    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier, string $labelLink): string
+    private function row(array $parcel, string $seller, string $stage, array $stages, int $now, ?array $carrier, string $labelLink, array $disputes = []): string
     {
         $first = $parcel[0];
         $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $parcel);
@@ -220,7 +222,8 @@ final class ShippingScreen
                     /* translators: %d: days */
                     __('shipped %d days ago — ask after it?', 'taxebay'),
                     intdiv($now - (int) $since, 86400)
-                )) . '</small>' : ''),
+                )) . '</small>' : '')
+                . self::disputeNotes($disputes),
             esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
@@ -360,6 +363,24 @@ final class ShippingScreen
 
         return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer">' . esc_html__('History', 'taxebay') . '</summary>'
             . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . $list . '</ol></details>';
+    }
+
+    /** @param list<array{kind: string, id: string, status: string, respond_by: string}> $disputes */
+    private static function disputeNotes(array $disputes): string
+    {
+        $notes = '';
+
+        foreach ($disputes as $dispute) {
+            $notes .= '<br><strong style="color:#d63638">' . esc_html($dispute['kind'] === 'case' ? __('Case open', 'taxebay') : __('Buyer inquiry open', 'taxebay'))
+                . '</strong><small style="color:#d63638"> · ' . esc_html(strtolower(str_replace('_', ' ', $dispute['status'])))
+                . ($dispute['respond_by'] === '' ? '' : ' · ' . esc_html(sprintf(
+                    /* translators: %s: date */
+                    __('answer by %s', 'taxebay'),
+                    $dispute['respond_by']
+                ))) . '</small>';
+        }
+
+        return $notes;
     }
 
     /**

@@ -167,6 +167,21 @@ final class ShippingTest extends TestCase
         self::assertFalse(LabelMatch::fits(['MÜLLER', '12345 ORT'], $sale(['Mü', 'Weg 1', '12345 Ort', 'DE'])));
     }
 
+    public function testOpenInquiriesAndCasesOfAnOrder(): void
+    {
+        $inquiries = (string) json_encode(['members' => [
+            ['inquiryId' => '5000123', 'inquiryStatusEnum' => 'WAITING_SELLER_RESPONSE', 'respondByDate' => ['value' => '2026-10-30T10:00:00.000Z']],
+            ['inquiryId' => '5000001', 'inquiryStatusEnum' => 'CLOSED'],
+        ]]);
+        $http = new ScriptedTransport([new HttpResponse(200, $inquiries), new HttpResponse(200, (string) json_encode(['members' => []]))]);
+
+        self::assertSame(
+            [['kind' => 'inquiry', 'id' => '5000123', 'status' => 'WAITING_SELLER_RESPONSE', 'respond_by' => '2026-10-30']],
+            (new ShippingClient(Environment::Production, $http))->disputes('token', '24-15238-03470')
+        );
+        self::assertNull((new ShippingClient(Environment::Production, new ScriptedTransport([new HttpResponse(403, '{}')])))->disputes('token', 'X'));
+    }
+
     public function testTheSameTrackingNumberMakesOneParcel(): void
     {
         $a = OpenShipment::fromOrder(self::order('A', '2026-10-27'))->withTracking('A005EFF1A10000000447');
