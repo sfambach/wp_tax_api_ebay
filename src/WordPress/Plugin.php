@@ -673,12 +673,12 @@ final class Plugin
                 $key = 'taxebay_disputes_' . md5($sale->orderId);
                 $found = get_transient($key);
 
-                if (! is_array($found)) {
+                if ($found === 'unread') {
+                    $found = null;
+                } elseif (! is_array($found)) {
                     $found = $client->disputes($token, $sale->orderId);
-                    // A failed read is not cached as «nothing open»: it is asked again next time.
-                    if ($found !== null) {
-                        set_transient($key, $found, HOUR_IN_SECONDS);
-                    }
+                    // A failed read is not «nothing open»; it is asked again after ten minutes.
+                    set_transient($key, $found ?? 'unread', $found === null ? 10 * MINUTE_IN_SECONDS : HOUR_IN_SECONDS);
                 }
 
                 if ($found === null) {
