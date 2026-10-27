@@ -47,7 +47,8 @@ final class SaleMapper
             (string) ($pricing['total']['currency'] ?? 'EUR'),
             array_map(self::line(...), array_values((array) ($order['lineItems'] ?? []))),
             self::amount($pricing['deliveryCost'] ?? null),
-            self::amount($pricing['total'] ?? null),
+            // What he received: a refund (postage of a combined parcel) lowers it.
+            Refunds::netTotal($order),
             isset($order['buyer']['username']) ? (string) $order['buyer']['username'] : null,
             self::amount($order['totalMarketplaceFee'] ?? null),
             $shipped,

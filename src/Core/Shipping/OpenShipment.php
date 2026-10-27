@@ -2,6 +2,8 @@
 
 namespace TaxEbay\Core\Shipping;
 
+use TaxEbay\Core\Sales\Refunds;
+
 /**
  * One sale he still has to pack and send, as the shipping list shows it. The address lives only in this object for
  * the page view; nothing of it is stored (concept §6).
@@ -26,13 +28,14 @@ final class OpenShipment
         public readonly string $country = '',
         public readonly string $tracking = '',
         public readonly string $modifiedAt = '',
+        public readonly ?string $refunded = null,
     ) {
     }
 
     /** The same sale with the tracking number eBay holds for it — set when he bought the label there. */
     public function withTracking(string $tracking): self
     {
-        return new self($this->orderId, $this->buyer, $this->orderedAt, $this->paid, $this->items, $this->address, $this->service, $this->total, $this->currency, $this->labelled, $this->country, $tracking, $this->modifiedAt);
+        return new self($this->orderId, $this->buyer, $this->orderedAt, $this->paid, $this->items, $this->address, $this->service, $this->total, $this->currency, $this->labelled, $this->country, $tracking, $this->modifiedAt, $this->refunded);
     }
 
     /** @param array<string, mixed> $order a Fulfillment API order; `mixed` because eBay's JSON nests */
@@ -62,21 +65,23 @@ final class OpenShipment
             $place['countryCode'] ?? '',
         ]), static fn (string $line): bool => trim($line) !== ''));
         $total = $order['pricingSummary']['total'] ?? [];
+        $refunded = Refunds::cents($order);
 
         return new self(
             (string) ($order['orderId'] ?? ''),
             (string) ($order['buyer']['username'] ?? ''),
             substr((string) ($order['creationDate'] ?? ''), 0, 10),
-            ($order['orderPaymentStatus'] ?? '') === 'PAID',
+            Refunds::isPaid((string) ($order['orderPaymentStatus'] ?? '')),
             $items,
             $address,
             (string) ($step['shippingServiceCode'] ?? ''),
-            isset($total['value']) ? (string) $total['value'] : null,
+            Refunds::netTotal($order),
             (string) ($total['currency'] ?? 'EUR'),
             $labelled,
             (string) ($place['countryCode'] ?? ''),
             '',
             (string) ($order['lastModifiedDate'] ?? ''),
+            $refunded === 0 ? null : number_format($refunded / 100, 2, '.', ''),
         );
     }
 }

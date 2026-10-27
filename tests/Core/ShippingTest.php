@@ -12,6 +12,7 @@ use TaxEbay\Core\Shipping\LabelMatch;
 use TaxEbay\Core\Shipping\LabelText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\Parcels;
+use TaxEbay\Core\Sales\SaleMapper;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
@@ -162,6 +163,24 @@ final class ShippingTest extends TestCase
         self::assertFalse(LabelMatch::fits($lines, $sale(['Mü', 'Weg 1', '54321 Ort', 'DE'])));
         self::assertFalse(LabelMatch::fits($lines, $sale(['Max', 'Weg 1', '12345 Ort', 'DE'])));
         self::assertSame([], LabelText::of('not a pdf'));
+        self::assertTrue(LabelMatch::fits(['FIRMA MÜ GMBH', '12345 ORT'], $sale(['Mü', 'Weg 1', '12345 Ort', 'DE'])));
+        self::assertFalse(LabelMatch::fits(['MÜLLER', '12345 ORT'], $sale(['Mü', 'Weg 1', '12345 Ort', 'DE'])));
+    }
+
+    public function testAPartialRefundLowersTheTotalAndKeepsTheOrderPaid(): void
+    {
+        $order = ['orderPaymentStatus' => 'PARTIALLY_REFUNDED', 'paymentSummary' => ['refunds' => [
+            ['refundStatus' => 'PENDING', 'amount' => ['value' => '2.90', 'currency' => 'EUR']],
+            ['refundStatus' => 'FAILED', 'amount' => ['value' => '5.00', 'currency' => 'EUR']],
+        ]]] + self::order('R', '2026-10-27');
+        $sale = OpenShipment::fromOrder($order);
+
+        self::assertTrue($sale->paid);
+        self::assertSame('22.00', $sale->total);
+        self::assertSame('2.90', $sale->refunded);
+        self::assertNull(OpenShipment::fromOrder(self::order('A', '2026-10-20'))->refunded);
+        self::assertSame('22.00', (new SaleMapper())->map($order)->total);
+        self::assertFalse(OpenShipment::fromOrder(['orderPaymentStatus' => 'FULLY_REFUNDED'] + self::order('F', '2026-10-27'))->paid);
     }
 
     public function testInsertSpeaksTheBuyersLanguage(): void

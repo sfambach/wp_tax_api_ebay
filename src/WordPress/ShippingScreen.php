@@ -200,7 +200,7 @@ final class ShippingScreen
         $early = in_array($stage, [Stages::OPEN, Stages::PACKED], true);
         $since = $stages[$first->orderId]['at'] ?? null;
         $overdue = $stage === Stages::SHIPPED && $since !== null && $since < $now - self::OVERDUE_DAYS * 86400;
-        $tracking = implode(', ', array_filter(array_map(static fn (OpenShipment $sale): string => $sale->tracking, $parcel)));
+        $tracking = implode(', ', array_unique(array_filter(array_map(static fn (OpenShipment $sale): string => $sale->tracking, $parcel))));
         $items = [];
 
         foreach ($parcel as $sale) {
@@ -270,7 +270,12 @@ final class ShippingScreen
         $lines = [];
 
         foreach ($parcel as $sale) {
-            $lines[] = esc_html(trim($sale->orderId . ' · ' . $sale->service . ' · ' . ($sale->total === null ? '' : $sale->total . ' ' . $sale->currency), ' ·'));
+            $lines[] = esc_html(trim($sale->orderId . ' · ' . $sale->service . ' · ' . ($sale->total === null ? '' : $sale->total . ' ' . $sale->currency)
+                . ($sale->refunded === null ? '' : ' (' . sprintf(
+                    /* translators: %s: amount with currency */
+                    __('%s refunded', 'taxebay'),
+                    $sale->refunded . ' ' . $sale->currency
+                ) . ')'), ' ·'));
         }
 
         $tools = '';

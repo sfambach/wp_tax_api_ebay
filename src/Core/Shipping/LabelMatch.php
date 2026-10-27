@@ -30,7 +30,8 @@ final class LabelMatch
             }
         }
 
-        $hasName = $name !== '' && in_array($name, $label, true);
+        // DHL may put more on the name line (a company, «c/o», a second first name) — the whole eBay name must stand in it.
+        $hasName = $name !== '' && array_filter($label, static fn (string $line): bool => str_contains(' ' . $line . ' ', ' ' . $name . ' ')) !== [];
         $hasPostcode = $postcode === '' || array_filter($label, static fn (string $line): bool => str_starts_with($line, $postcode . ' ')) !== [];
 
         return $hasName && $hasPostcode;
