@@ -228,7 +228,7 @@ final class ShippingScreen
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
             ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
-                . ($carrier === null ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>'
+                . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>')
                     . (isset($carrier['checked_at']) && is_numeric($carrier['checked_at']) ? '<br><small style="color:#646970">' . esc_html(sprintf(
                         /* translators: %s: date and time */
                         __('as of %s', 'taxebay'),
@@ -350,19 +350,35 @@ final class ShippingScreen
             return $number;
         }
 
-        $list = '';
+        // The newest event is the summary, the older ones open below it — DHL's word once, not twice (his note, 2026-10-27).
+        $lines = array_map(self::eventLine(...), array_values($events));
+        $newest = array_shift($lines);
+        $style = ($carrier['stage'] ?? '') === 'problem' ? 'color:#d63638;' : '';
 
-        foreach ($events as $event) {
-            $when = (string) ($event['at'] ?? '');
-            $time = strtotime($when);
-            $text = trim((string) ($event['description'] ?? '')) ?: (string) ($event['status'] ?? '');
-            $place = trim((string) ($event['place'] ?? ''));
-            $list .= '<li><small>' . esc_html($time === false ? $when : wp_date('d.m. H:i', $time)) . '</small> ' . esc_html($text)
-                . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>') . '</li>';
+        if ($lines === []) {
+            return $number . '<br><small style="' . $style . '">DHL: ' . $newest . '</small>';
         }
 
-        return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer">' . esc_html__('History', 'taxebay') . '</summary>'
-            . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . $list . '</ol></details>';
+        return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer;' . $style . '"><small>DHL: ' . $newest . '</small></summary>'
+            . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . implode('', array_map(static fn (string $line): string => '<li>' . $line . '</li>', $lines)) . '</ol></details>';
+    }
+
+    /** @param array<string, mixed> $event one of the DHL module's events; `mixed`: its array */
+    private static function eventLine(array $event): string
+    {
+        $when = (string) ($event['at'] ?? '');
+        $time = strtotime($when);
+        $text = trim((string) ($event['description'] ?? '')) ?: (string) ($event['status'] ?? '');
+        $place = trim((string) ($event['place'] ?? ''));
+
+        return '<small>' . esc_html($time === false ? $when : wp_date('d.m. H:i', $time)) . '</small> ' . esc_html($text)
+            . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>');
+    }
+
+    /** @param array<string, mixed> $carrier `mixed`: the DHL module's array */
+    private static function hasEvents(array $carrier): bool
+    {
+        return array_filter((array) ($carrier['events'] ?? []), 'is_array') !== [];
     }
 
     /** @param list<array{kind: string, id: string, status: string, respond_by: string}> $disputes */
