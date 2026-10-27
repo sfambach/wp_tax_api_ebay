@@ -35,6 +35,8 @@ final class ShippingScreen
     /** Bulk moves post to `admin_post_<this><stage>`; ListPage's bulk bar names the handler in its action field. */
     public const BULK_TO = 'taxebay_to_';
     public const DHL_REFRESH = 'taxebay_dhl_refresh';
+    /** DHL answers one call every five seconds; ten keep a click under a minute (wp_tax_api_dhl 0.0.10). */
+    public const REFRESH_AT_ONCE = 10;
     /** Query argument naming the parcel whose history opens after a refresh. */
     public const OPEN_HISTORY = 'taxebay_open';
 
@@ -115,7 +117,7 @@ final class ShippingScreen
             $rows = '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nothing here.', 'taxebay') . '</td></tr>';
         }
 
-        $html .= self::refreshAll($shown, $tab);
+        $html .= self::refreshAll($shown, $tab, $carrier);
 
         return $html . ListPage::table([
             self::column($list, 'date', __('Order', 'taxebay'), '12em'),
@@ -361,12 +363,16 @@ final class ShippingScreen
     }
 
     /**
-     * «Refresh DHL» for every parcel of the tab with a tracking number; only where DHL can move it on.
+     * «Refresh DHL» for the parcels of the tab with a tracking number, the longest unchecked first; only where DHL can
+     * move it on. DHL allows one call every five seconds, so one click asks for at most REFRESH_AT_ONCE.
      *
      * @param list<non-empty-list<OpenShipment>> $parcels
+     * @param array<string, array<string, mixed>> $carrier `mixed`: the DHL module's array
      */
-    private static function refreshAll(array $parcels, string $tab): string
+    private static function refreshAll(array $parcels, string $tab, array $carrier): string
     {
+        usort($parcels, static fn (array $a, array $b): int => (int) ($carrier[$a[0]->orderId]['checked_at'] ?? 0) <=> (int) ($carrier[$b[0]->orderId]['checked_at'] ?? 0));
+
         if (! in_array($tab, [Stages::PACKED, Stages::SHIPPED], true)) {
             return '';
         }
@@ -384,6 +390,8 @@ final class ShippingScreen
         if ($arguments === []) {
             return '';
         }
+
+        $arguments = array_slice($arguments, 0, self::REFRESH_AT_ONCE);
 
         return '<p style="text-align:right;margin:0 0 8px"><a class="button" href="' . esc_url(self::refreshUrl($arguments, $tab, '')) . '">'
             . esc_html__('Refresh DHL', 'taxebay') . '</a></p>';

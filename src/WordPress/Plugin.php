@@ -29,7 +29,7 @@ final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
 
-    public const VERSION    = '0.0.56';
+    public const VERSION    = '0.0.57';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -582,7 +582,7 @@ final class Plugin
         $list = isset($_GET['parcels']) ? sanitize_text_field(wp_unslash($_GET['parcels'])) : '';
         $failed = [];
 
-        foreach (explode(';', $list) as $parcel) {
+        foreach (array_slice(explode(';', $list), 0, ShippingScreen::REFRESH_AT_ONCE) as $parcel) {
             if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) !== 1) {
                 continue;
             }
