@@ -216,7 +216,7 @@ final class ShippingScreen
 
         $place = trim((string) ($first->address[count($first->address) - 2] ?? ''));
         $cells = [
-            '<strong>' . implode('<br>', array_map('esc_html', $ids)) . '</strong><br><small>' . esc_html($first->orderedAt) . ' · '
+            '<strong>' . implode('<br>', array_map(self::orderLink(...), $ids)) . '</strong><br><small>' . esc_html($first->orderedAt) . ' · '
                 . ($paid ? esc_html__('paid', 'taxebay') : '<span style="color:#d63638">' . esc_html__('not all paid yet', 'taxebay') . '</span>') . '</small>'
                 . ($overdue ? '<br><small style="color:#d63638">' . esc_html(sprintf(
                     /* translators: %d: days */
@@ -323,7 +323,7 @@ final class ShippingScreen
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary small', 'submit', false, $paid ? null : ['disabled' => 'disabled']) . '</form>';
         }
 
-        $links = '<a href="' . esc_url('https://www.ebay.de/sh/ord/details?orderid=' . rawurlencode($first->orderId)) . '" target="_blank" rel="noopener">' . esc_html__('Open at eBay', 'taxebay') . '</a>'
+        $links = '<a href="' . esc_url(self::ebayOrderUrl($first->orderId)) . '" target="_blank" rel="noopener">' . esc_html__('Open at eBay', 'taxebay') . '</a>'
             . ($stage === Stages::RECEIVED ? ' · <a href="' . esc_url('https://www.ebay.de/fdbk/leave_feedback') . '" target="_blank" rel="noopener">' . esc_html__('Leave feedback', 'taxebay') . '</a>' : '');
 
         return '<div style="display:flex;gap:32px;flex-wrap:wrap;padding-top:8px">'
@@ -361,6 +361,17 @@ final class ShippingScreen
 
         return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer;' . $style . '"><small>DHL: ' . $newest . '</small></summary>'
             . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . implode('', array_map(static fn (string $line): string => '<li>' . $line . '</li>', $lines)) . '</ol></details>';
+    }
+
+    /** The order number opens the sale at eBay in a new tab (his wish, 2026-10-28). */
+    private static function orderLink(string $orderId): string
+    {
+        return '<a href="' . esc_url(self::ebayOrderUrl($orderId)) . '" target="_blank" rel="noopener" title="' . esc_attr__('Open at eBay', 'taxebay') . '">' . esc_html($orderId) . '</a>';
+    }
+
+    private static function ebayOrderUrl(string $orderId): string
+    {
+        return 'https://www.ebay.de/sh/ord/details?orderid=' . rawurlencode($orderId);
     }
 
     /** @param array<string, mixed> $event one of the DHL module's events; `mixed`: its array */
