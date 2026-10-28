@@ -28,10 +28,12 @@ use TaxEbay\Core\Shipping\Stages;
 final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
+    /** wp_tax_stock's main menu for incoming goods, outgoing goods and stock (TaxmodStock\WordPress\Plugin::MENU). */
+    private const LOGISTICS_MENU = 'taxmod-logistik';
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.63';
+    public const VERSION    = '0.0.64';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -259,7 +261,12 @@ final class Plugin
     /** «eBay shipping» under the modeller's menu (D-976). */
     public function registerShippingPage(): void
     {
-        $parent = isset($GLOBALS['admin_page_hooks']['taxmod']) ? 'taxmod' : 'tools.php';
+        // Outgoing goods belong to the «Logistik» menu of wp_tax_stock ≥ 0.3.0 (D-1004); without it the old place.
+        $parent = match (true) {
+            isset($GLOBALS['admin_page_hooks'][self::LOGISTICS_MENU]) => self::LOGISTICS_MENU,
+            isset($GLOBALS['admin_page_hooks']['taxmod'])            => 'taxmod',
+            default                                                  => 'tools.php',
+        };
 
         $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
             $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : Stages::OPEN;
