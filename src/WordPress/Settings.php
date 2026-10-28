@@ -21,6 +21,10 @@ final class Settings
     public const SCHEDULE = 'taxmod_ebay_schedule';
     public const INSERT_FORMAT = 'taxmod_ebay_insert_format';
     public const STAGES = 'taxmod_ebay_stages';
+    /** Tracking numbers eBay gave per order; they do not change once the label is bought. */
+    public const TRACKING = 'taxmod_ebay_tracking';
+    /** The sealed access token, kept for its lifetime so a page view starts without a call to eBay. */
+    public const ACCESS_TOKEN = 'taxebay_access_token';
     /** Open buyer inquiries and cases as eBay named them at the last refresh, per order. */
     public const DISPUTES = 'taxmod_ebay_disputes';
     private const PACKED_BEFORE_STAGES = 'taxmod_ebay_packed';
@@ -151,6 +155,7 @@ final class Settings
             'connected_at'    => current_time('mysql'),
             'scopes'          => \TaxEbay\Core\OAuth\Scopes::asString(),
         ], false);
+        delete_transient(self::ACCESS_TOKEN);
     }
 
     /** A consent given before the module asked for more rights must be renewed with «Connect again». */
@@ -211,6 +216,45 @@ final class Settings
         delete_option(self::PACKED_BEFORE_STAGES);
     }
 
+    /** @return array<string, string> order id → tracking numbers, comma-separated */
+    public static function trackingNumbers(): array
+    {
+        $stored = get_option(self::TRACKING, []);
+        $numbers = [];
+
+        foreach (is_array($stored) ? $stored : [] as $orderId => $note) {
+            if (is_array($note) && is_string($note['number'] ?? null)) {
+                $numbers[(string) $orderId] = $note['number'];
+            }
+        }
+
+        return $numbers;
+    }
+
+    /**
+     * Adds what is new; numbers older than the stage notes go.
+     *
+     * @param array<string, string> $byOrder
+     */
+    public static function saveTrackingNumbers(array $byOrder, int $now): void
+    {
+        $stored = get_option(self::TRACKING, []);
+        // `mixed`: whatever the option holds.
+        $kept = array_filter(is_array($stored) ? $stored : [], static fn (mixed $note): bool => is_array($note) && (int) ($note['at'] ?? 0) > $now - self::STAGE_DAYS * 86400);
+        $changed = false;
+
+        foreach ($byOrder as $orderId => $number) {
+            if (($kept[$orderId]['number'] ?? null) !== $number) {
+                $kept[$orderId] = ['number' => $number, 'at' => $now];
+                $changed = true;
+            }
+        }
+
+        if ($changed || count($kept) !== count(is_array($stored) ? $stored : [])) {
+            update_option(self::TRACKING, $kept, false);
+        }
+    }
+
     /** @return array<string, array{open: list<array{kind: string, id: string, status: string, respond_by: string}>, at: int}> order id → last word */
     public static function disputes(): array
     {
@@ -244,5 +288,7 @@ final class Settings
     public static function forget(): void
     {
         delete_option(self::CONNECTION);
+        // The access token kept for page views must not outlive the connection.
+        delete_transient(self::ACCESS_TOKEN);
     }
 }

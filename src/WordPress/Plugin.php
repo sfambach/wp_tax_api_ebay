@@ -31,7 +31,7 @@ final class Plugin
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.62';
+    public const VERSION    = '0.0.63';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -742,7 +742,17 @@ final class Plugin
             }
         }
 
-        $tracked = $client->tracked($token, array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId]))));
+        // A tracking number does not change once the label is bought: eBay is asked only for those not known yet.
+        $known = Settings::trackingNumbers();
+        $toShow = array_values(array_filter($open, static fn (OpenShipment $sale): bool => isset($shown[$sale->orderId])));
+        $tracked = array_merge(
+            array_map(static fn (OpenShipment $sale): OpenShipment => $sale->withTracking($known[$sale->orderId]), array_values(array_filter($toShow, static fn (OpenShipment $sale): bool => $sale->labelled && ($known[$sale->orderId] ?? '') !== ''))),
+            $client->tracked($token, array_values(array_filter($toShow, static fn (OpenShipment $sale): bool => ! $sale->labelled || ($known[$sale->orderId] ?? '') === '')))
+        );
+        Settings::saveTrackingNumbers(array_filter(array_combine(
+            array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked),
+            array_map(static fn (OpenShipment $sale): string => $sale->tracking, $tracked)
+        ) ?: [], static fn (string $number): bool => $number !== ''), time());
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
         // Only what DHL said last; asking anew is a click away (his wish, 2026-10-27), so the page loads fast.
         self::lastCarrierWord($tracked, $carrier);
@@ -769,7 +779,26 @@ final class Plugin
         $keys = Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay'));
         $connection = Settings::connection() ?? throw new EbayApiException(__('Not connected to eBay yet.', 'taxebay'));
 
-        return (new TokenClient($keys, WpHttpTransport::budgeted()))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
+        $kept = get_transient(Settings::ACCESS_TOKEN);
+
+        // Sealed like every secret of the module (D-951); kept for its own lifetime less a margin, so a page view
+        // does not start with a call to eBay.
+        if (is_string($kept) && $kept !== '') {
+            try {
+                return Settings::vault()->open($kept);
+            } catch (SecretDoesNotOpen) {
+                delete_transient(Settings::ACCESS_TOKEN);
+            }
+        }
+
+        $tokens = (new TokenClient($keys, WpHttpTransport::budgeted()))->refresh(Settings::vault()->open($connection['refresh']), time());
+        $lifetime = $tokens->accessExpiresAt - time() - 300;
+
+        if ($lifetime > 0) {
+            set_transient(Settings::ACCESS_TOKEN, Settings::vault()->seal($tokens->accessToken), $lifetime);
+        }
+
+        return $tokens->accessToken;
     }
 
     /** The fallback page's own form; the tab saves through the modeller. */
