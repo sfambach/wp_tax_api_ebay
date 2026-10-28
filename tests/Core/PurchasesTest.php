@@ -120,4 +120,18 @@ final class PurchasesTest extends TestCase
 
         self::assertStringContainsString('<CreateTimeFrom>2026-07-24T12:00:00.000Z</CreateTimeFrom>', $http->sent[0]->body);
     }
+
+    public function testAnUnpaidOrderWaitsForItsRealNumber(): void
+    {
+        $mapper = new PurchaseMapper();
+        $unpaid = new \SimpleXMLElement('<Order><OrderID>237125704187-10085947961312</OrderID><CreatedTime>2026-10-25T10:00:00.000Z</CreatedTime></Order>');
+        $paid = new \SimpleXMLElement('<Order><OrderID>12-15342-88258</OrderID><CreatedTime>2026-10-25T10:00:00.000Z</CreatedTime><Total currencyID="EUR">5.00</Total></Order>');
+        $extended = new \SimpleXMLElement('<Order><OrderID>237125704187-10085947961312</OrderID><ExtendedOrderID>12-15342-88258</ExtendedOrderID><CreatedTime>2026-10-25T10:00:00.000Z</CreatedTime></Order>');
+
+        self::assertTrue($mapper->awaitsNumber($unpaid));
+        self::assertFalse($mapper->awaitsNumber($paid));
+        self::assertSame('12-15342-88258', $mapper->map($paid)->orderNumber);
+        self::assertSame('12-15342-88258', $mapper->map($extended)->orderNumber);
+        self::assertFalse($mapper->awaitsNumber($extended));
+    }
 }

@@ -33,7 +33,7 @@ final class Plugin
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.64';
+    public const VERSION    = '0.0.65';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 

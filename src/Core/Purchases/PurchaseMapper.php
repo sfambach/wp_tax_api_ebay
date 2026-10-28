@@ -15,6 +15,7 @@ final class PurchaseMapper
 {
     public const PLATFORM = 'eBay';
     public const SOURCE = 'ebay';
+    private const ORDER_NUMBER = '/^\d{2}-\d{5}-\d{5}$/';
 
     public function map(SimpleXMLElement $order): OrderProposal
     {
@@ -47,7 +48,7 @@ final class PurchaseMapper
         $date = self::day((string) ($order->ShippedTime ?? ''));
         $shipped = $shipped ?? $date;
 
-        $orderId = trim((string) $order->OrderID);
+        $orderId = $this->orderNumber($order) ?: trim((string) $order->OrderID);
 
         return new OrderProposal(
             self::PLATFORM,
@@ -65,6 +66,31 @@ final class PurchaseMapper
             self::SOURCE,
             $orderId,
         );
+    }
+
+    /**
+     * The order number eBay shows him and puts in its mails, «12-15342-88258»; '' while eBay has none yet.
+     *
+     * Until an order is paid, eBay may hand out only the item-transaction id («237125704187-10085947961312») and give
+     * the real number later — proposing it then filed the same purchase twice, once from the mail (2026-10-28).
+     */
+    public function orderNumber(SimpleXMLElement $order): string
+    {
+        foreach ([$order->OrderID ?? null, $order->ExtendedOrderID ?? null] as $candidate) {
+            $number = trim((string) $candidate);
+
+            if (preg_match(self::ORDER_NUMBER, $number) === 1) {
+                return $number;
+            }
+        }
+
+        return '';
+    }
+
+    /** True while eBay knows the order only by its item-transaction id: it waits until the real number comes. */
+    public function awaitsNumber(SimpleXMLElement $order): bool
+    {
+        return $this->orderNumber($order) === '' && preg_match('/^\d+-\d+$/', trim((string) $order->OrderID)) === 1;
     }
 
     /**

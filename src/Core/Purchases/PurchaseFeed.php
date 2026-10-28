@@ -26,9 +26,18 @@ final class PurchaseFeed
         $oldest = $now->modify('-' . (PurchasesClient::MAX_DAYS_BACK - 1) . ' days');
         $from = $cursor === null ? $oldest : max($oldest, (new DateTimeImmutable($cursor))->modify(self::OVERLAP));
         $proposals = [];
+        $cursor = $now;
 
         foreach ($this->client->ordersCreatedBetween($accessToken, $from, $now) as $order) {
             if ($this->mapper->isCancelled($order)) {
+                continue;
+            }
+
+            // Not paid yet, so no real number: read again from its creation until eBay gives one (2026-10-28).
+            if ($this->mapper->awaitsNumber($order)) {
+                $created = new DateTimeImmutable((string) $order->CreatedTime);
+                $cursor = min($cursor, $created->modify('+1 day'));
+
                 continue;
             }
 
@@ -40,6 +49,7 @@ final class PurchaseFeed
             ]);
         }
 
-        return new FetchBatch($proposals, $now->format(DATE_ATOM));
+        // The next run starts a day before the cursor (OVERLAP), so a waiting order is read again.
+        return new FetchBatch($proposals, $cursor->format(DATE_ATOM));
     }
 }
