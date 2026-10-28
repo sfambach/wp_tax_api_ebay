@@ -4,6 +4,8 @@ namespace TaxEbay\WordPress;
 
 use DateTimeImmutable;
 use SimpleXMLElement;
+use TaxEbay\Core\Mail\EbayMailParser;
+use Taxmod\Core\Import\Mail\OrderMailParser;
 use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\OAuth\AppKeys;
@@ -33,7 +35,7 @@ final class Plugin
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.65';
+    public const VERSION    = '0.0.66';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -50,6 +52,8 @@ final class Plugin
         add_action('admin_menu', $plugin->registerMenu(...), 20);
         add_filter('taxmod_config_tabs', $plugin->registerTab(...));
         add_filter('taxmod_import_sources', static fn (array $sources): array => [...$sources, new EbaySource()]);
+        // ⚠️ *D-1006: the eBay mails are read here, not in Taxmod Mail, which only fetches them (needs modeller 0.1.81).*
+        add_filter('taxmail_parsers', static fn (array $parsers): array => ($reader = self::mailReader()) === null ? $parsers : [...$parsers, $reader]);
         add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
         add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
         add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
@@ -84,6 +88,7 @@ final class Plugin
             'save'   => static fn (array $post): bool => self::saveKeys($post),
             'guide'  => static fn (): string => (new SettingsScreen())->guide(),
             'version' => self::VERSION,
+            'reader'  => self::mailReader(),
         ];
 
         // The shared layout of D-981: the modeller draws access, fetch interval and settings in that order.
@@ -102,6 +107,14 @@ final class Plugin
         }
 
         return $tabs;
+    }
+
+    /** The reader of eBay's mails, once; null while the modeller lacks the mail contract (before 0.1.81). */
+    public static function mailReader(): ?EbayMailParser
+    {
+        static $reader = null;
+
+        return $reader ??= interface_exists(OrderMailParser::class) ? new EbayMailParser(self::VERSION) : null;
     }
 
     /** Only for a modeller without the tabs of D-945: then the module keeps its own page. */
