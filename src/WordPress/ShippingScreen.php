@@ -25,6 +25,7 @@ final class ShippingScreen
     public const INSERT = 'taxebay_insert';
     public const STAGE = 'taxebay_stage';
     public const LABEL_PDF = 'taxebay_label_pdf';
+    public const LABEL_PRINTED = 'taxebay_label_printed';
 
     /** A parcel this long in «shipped» without arriving is worth asking after. */
     private const OVERDUE_DAYS = 7;

@@ -196,8 +196,10 @@
 			}
 
 			print(pages, caption);
+			return true;
 		}).catch(function (failure) {
 			window.alert(taxebayLabel.failed + ' ' + failure.message);
+			return false;
 		});
 	}
 
@@ -227,7 +229,10 @@
 				throw new Error((await response.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200));
 			}
 
-			await run(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }), button.getAttribute('data-taxebay-link'));
+			if (await run(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }), button.getAttribute('data-taxebay-link'))) {
+				// tax_mail deletes a printed label after 14 days; a failed note only means it waits the full 30.
+				fetch(taxebayLabel.printed, { method: 'POST', credentials: 'same-origin', body: new URLSearchParams({ url: link }) }).catch(function () {});
+			}
 		} catch (failure) {
 			window.alert(taxebayLabel.failed + ' ' + failure.message);
 		} finally {

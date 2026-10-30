@@ -30,12 +30,16 @@ use TaxEbay\Core\Shipping\Stages;
 final class Plugin
 {
     private const LABEL_FETCHES_PER_VIEW = 5;
+
+    /** tax_mail keeps a DHL label 30 days, or 14 after it was printed; the label text cached here goes with it. */
+    private const LABEL_KEEP_DAYS = 30;
+    private const LABEL_KEEP_AFTER_PRINT_DAYS = 14;
     /** wp_tax_stock's main menu for incoming goods, outgoing goods and stock (TaxmodStock\WordPress\Plugin::MENU). */
     private const LOGISTICS_MENU = 'taxmod-logistik';
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.66';
+    public const VERSION    = '0.0.67';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -71,6 +75,7 @@ final class Plugin
         }
 
         add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
+        add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->handleLabelPrinted(...));
         add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
     }
 
@@ -327,13 +332,14 @@ final class Plugin
             'noLink'  => __('Paste the «print label» link from DHL\'s mail first.', 'taxebay'),
             // Not wp_nonce_url(): that escapes & for HTML, and this goes to a script.
             'fetch'   => add_query_arg(['action' => ShippingScreen::LABEL_PDF, '_wpnonce' => wp_create_nonce(ShippingScreen::LABEL_PDF)], admin_url('admin-post.php')),
+            'printed' => add_query_arg(['action' => ShippingScreen::LABEL_PRINTED, '_wpnonce' => wp_create_nonce(ShippingScreen::LABEL_PRINTED)], admin_url('admin-post.php')),
         ]);
     }
 
     /**
      * Label links tax_mail read from DHL's mails (tax_mail ≥ 0.3.0); only links this plugin would fetch are kept.
      *
-     * @return list<array{cart: string, date: string, links: list<string>}>
+     * @return list<array{cart: string, date: string, links: list<string>, printed_at: ?int}>
      */
     private static function dhlLabels(): array
     {
@@ -343,11 +349,23 @@ final class Plugin
             $links = array_values(array_filter(array_map('strval', (array) ($label['links'] ?? [])), DhlLabelLink::accepts(...)));
 
             if ($links !== []) {
-                $labels[] = ['cart' => (string) ($label['cart'] ?? ''), 'date' => (string) ($label['date'] ?? ''), 'links' => $links];
+                $labels[] = ['cart' => (string) ($label['cart'] ?? ''), 'date' => (string) ($label['date'] ?? ''), 'links' => $links, 'printed_at' => self::printedAt($label['printed_at'] ?? null)];
             }
         }
 
         return $labels;
+    }
+
+    /** tax_mail's printed_at as a timestamp, whether it hands over seconds or a date string; null when not printed. */
+    private static function printedAt(mixed $value): ?int // mixed: tax_mail does not fix the format
+    {
+        if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+            return (int) $value > 0 ? (int) $value : null;
+        }
+
+        $time = is_string($value) && $value !== '' ? strtotime($value) : false;
+
+        return $time === false ? null : $time;
     }
 
     /** The eBay user name his account is connected as. */
@@ -483,6 +501,42 @@ final class Plugin
         exit;
     }
 
+    /**
+     * The browser printed a label: tax_mail learns it (and deletes the label 14 days on), and the label text cached
+     * here — the recipient's name and address — goes no later than that.
+     */
+    public function handleLabelPrinted(): void
+    {
+        $this->guard(ShippingScreen::LABEL_PRINTED);
+        $url = isset($_POST['url']) ? esc_url_raw(wp_unslash($_POST['url']), ['https']) : '';
+
+        if (! DhlLabelLink::accepts($url)) {
+            wp_die(esc_html__('That is not a DHL label link.', 'taxebay'), 400);
+        }
+
+        foreach (self::dhlLabels() as $label) {
+            if ($label['cart'] !== '' && in_array($url, $label['links'], true)) {
+                do_action('taxmail_dhl_label_printed', $label['cart']);
+                break;
+            }
+        }
+
+        $key = self::labelKey($url);
+        $lines = get_transient($key);
+
+        if (is_array($lines)) {
+            set_transient($key, $lines, self::LABEL_KEEP_AFTER_PRINT_DAYS * DAY_IN_SECONDS);
+        }
+
+        status_header(204);
+        exit;
+    }
+
+    private static function labelKey(string $link): string
+    {
+        return 'taxebay_label_' . md5($link);
+    }
+
     /** The PDF behind a DHL label link, or null when DHL does not hand it out; callers check the link first. */
     private static function labelPdf(string $url): ?string
     {
@@ -494,10 +548,10 @@ final class Plugin
 
     /**
      * Which DHL label belongs to which shown parcel, read from the recipient printed on each label. A label's text is
-     * kept for the 30 days tax_mail keeps the link, so each PDF is fetched once.
+     * kept as long as tax_mail keeps the label — 30 days, or 14 after printing — so each PDF is fetched once.
      *
      * @param list<OpenShipment> $sales
-     * @param list<array{cart: string, date: string, links: list<string>}> $labels
+     * @param list<array{cart: string, date: string, links: list<string>, printed_at: ?int}> $labels
      * @return array<string, string> order id → label link
      */
     private static function labelsByOrder(array $sales, array $labels): array
@@ -512,8 +566,16 @@ final class Plugin
         $fetched = 0;
 
         foreach ($labels as $label) {
+            $keep = $label['printed_at'] === null ? self::LABEL_KEEP_DAYS * DAY_IN_SECONDS : $label['printed_at'] + self::LABEL_KEEP_AFTER_PRINT_DAYS * DAY_IN_SECONDS - time();
+
             foreach ($label['links'] as $link) {
-                $key = 'taxebay_label_' . md5($link);
+                $key = self::labelKey($link);
+
+                if ($keep <= 0) {
+                    delete_transient($key);
+                    continue;
+                }
+
                 $lines = get_transient($key);
 
                 if (! is_array($lines)) {
@@ -524,7 +586,7 @@ final class Plugin
 
                     $pdf = self::labelPdf($link);
                     $lines = $pdf === null ? [] : LabelText::of($pdf);
-                    set_transient($key, $lines, $pdf === null ? HOUR_IN_SECONDS : 30 * DAY_IN_SECONDS);
+                    set_transient($key, $lines, $pdf === null ? min(HOUR_IN_SECONDS, $keep) : $keep);
                 }
 
                 foreach ($parcels as $parcel) {
