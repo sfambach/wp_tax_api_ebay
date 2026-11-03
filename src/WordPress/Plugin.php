@@ -39,7 +39,7 @@ final class Plugin
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.67';
+    public const VERSION    = '0.0.68';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -648,12 +648,46 @@ final class Plugin
     {
         foreach ($sales as $sale) {
             $number = trim(explode(',', $sale->tracking)[0]);
-            $word = $number === '' ? null : apply_filters('taxmod_dhl_tracking', null, $number);
+            $word = $number === '' ? null : self::tracking($number, false);
 
             if (is_array($word) && isset($word['stage'])) {
                 $carrier[$sale->orderId] = $word;
             }
         }
+    }
+
+    /**
+     * What a carrier module says about a tracking number, with `carrier` set to the one that knows it: DHL first, GLS
+     * when DHL has nothing (D-1132). A refresh asks only GLS for a number GLS already knows, so DHL's daily calls are
+     * not spent on it. Without the GLS module, GLS's filter answers null and this is DHL alone.
+     *
+     * @return array<string, mixed>|null `mixed`: the carrier module's array
+     */
+    private static function tracking(string $number, bool $refresh): ?array
+    {
+        $stored = self::carrierAnswer('taxmod_gls_tracking', $number, false, 'GLS');
+
+        if ($refresh && $stored !== null && ($stored['known'] ?? true) !== false) {
+            return self::carrierAnswer('taxmod_gls_tracking', $number, true, 'GLS');
+        }
+
+        $dhl = self::carrierAnswer('taxmod_dhl_tracking', $number, $refresh, 'DHL');
+
+        if ($dhl !== null && ($dhl['known'] ?? true) !== false) {
+            return $dhl;
+        }
+
+        $gls = $refresh ? self::carrierAnswer('taxmod_gls_tracking', $number, true, 'GLS') : $stored;
+
+        return $gls !== null && ($gls['known'] ?? true) !== false ? $gls : $dhl;
+    }
+
+    /** @return array<string, mixed>|null `mixed`: the carrier module's array */
+    private static function carrierAnswer(string $filter, string $number, bool $refresh, string $carrier): ?array
+    {
+        $word = $refresh ? apply_filters($filter, null, $number, 'refresh') : apply_filters($filter, null, $number);
+
+        return is_array($word) && isset($word['stage']) ? ['carrier' => $carrier] + $word : null;
     }
 
     /**
@@ -756,7 +790,7 @@ final class Plugin
 
             array_push($asked, ...explode(',', $parts[1]));
 
-            $word = apply_filters('taxmod_dhl_tracking', null, $parts[2], 'refresh');
+            $word = self::tracking($parts[2], true);
 
             if (! is_array($word) || ! isset($word['stage'])) {
                 $failed[] = $parts[2];

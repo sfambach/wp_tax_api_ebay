@@ -229,7 +229,7 @@ final class ShippingScreen
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
             ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
-                . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>DHL: ' . esc_html(self::carrierWord($carrier)) . '</small>')
+                . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>' . esc_html(self::carrierName($carrier) . ': ' . self::carrierWord($carrier)) . '</small>')
                     . (isset($carrier['checked_at']) && is_numeric($carrier['checked_at']) ? '<br><small style="color:#646970">' . esc_html(sprintf(
                         /* translators: %s: date and time */
                         __('as of %s', 'taxebay'),
@@ -345,7 +345,7 @@ final class ShippingScreen
         $events = array_filter((array) ($carrier['events'] ?? []), 'is_array');
         $open = isset($_GET[self::OPEN_HISTORY]) && sanitize_text_field(wp_unslash($_GET[self::OPEN_HISTORY])) === $ids[0];
         $number = '<a href="' . esc_url(self::refreshUrl([self::parcelArgument($ids, $tracking)], $stage, $ids[0])) . '" title="'
-            . esc_attr__('Ask DHL now and show the history', 'taxebay') . '"><code>' . esc_html($tracking) . '</code></a>';
+            . esc_attr__('Ask the carrier now and show the history', 'taxebay') . '"><code>' . esc_html($tracking) . '</code></a>';
 
         if ($events === []) {
             return $number;
@@ -357,10 +357,10 @@ final class ShippingScreen
         $style = ($carrier['stage'] ?? '') === 'problem' ? 'color:#d63638;' : '';
 
         if ($lines === []) {
-            return $number . '<br><small style="' . $style . '">DHL: ' . $newest . '</small>';
+            return $number . '<br><small style="' . $style . '">' . esc_html(self::carrierName($carrier ?? [])) . ': ' . $newest . '</small>';
         }
 
-        return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer;' . $style . '"><small>DHL: ' . $newest . '</small></summary>'
+        return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer;' . $style . '"><small>' . esc_html(self::carrierName($carrier ?? [])) . ': ' . $newest . '</small></summary>'
             . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . implode('', array_map(static fn (string $line): string => '<li>' . $line . '</li>', $lines)) . '</ol></details>';
     }
 
@@ -385,6 +385,12 @@ final class ShippingScreen
 
         return '<small>' . esc_html($time === false ? $when : wp_date('d.m. H:i', $time)) . '</small> ' . esc_html($text)
             . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>');
+    }
+
+    /** @param array<string, mixed> $carrier `mixed`: the carrier module's array */
+    private static function carrierName(array $carrier): string
+    {
+        return (string) ($carrier['carrier'] ?? 'DHL');
     }
 
     /** @param array<string, mixed> $carrier `mixed`: the DHL module's array */
@@ -443,7 +449,7 @@ final class ShippingScreen
         $arguments = array_slice($arguments, 0, self::REFRESH_AT_ONCE);
 
         return '<p style="text-align:right;margin:0 0 8px"><a class="button" href="' . esc_url(self::refreshUrl($arguments, $tab, '')) . '">'
-            . esc_html__('Refresh DHL and eBay', 'taxebay') . '</a></p>';
+            . esc_html__('Refresh tracking and eBay', 'taxebay') . '</a></p>';
     }
 
     /** @param list<string> $ids */
