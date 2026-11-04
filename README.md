@@ -36,6 +36,10 @@ eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxon
 6. Sales not shipped yet are listed on *Taxonomy Modeller → eBay shipping* (D-976): print the insert for the parcel,
    enter carrier and tracking number, «Mark shipped» reports it to eBay. The buyer's address is read live and never
    stored. From 0.0.15 the module asks for `sell.fulfillment` (write); an older consent needs «Connect again».
+7. A parcel lost, damaged or returned: «Send again» in its details (tabs Shipped/Received, D-1168) asks for the reason,
+   the new tracking number (may follow later) and the stock lot the goods come from. The goods leave stock as a loss
+   (Taxmod Stock ≥ 0.45.0), the parcel goes back to «Open», the first number stays on record and the new one is tracked
+   and added to the sale. eBay is not told. «Take resend back» cancels all of it.
 
 The refresh token is stored sealed (libsodium) with a key derived from the auth salt in `wp-config.php`; changing that
 salt means connecting again. Production keysets also need the *Marketplace account deletion* notification settled in

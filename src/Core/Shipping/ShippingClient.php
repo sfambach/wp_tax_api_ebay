@@ -30,10 +30,14 @@ final class ShippingClient
      * Not shipped yet, plus — when `$labelledSince` is given — orders eBay counts as shipped that changed since then:
      * labels he bought at eBay, and parcels further down his stages (D-985).
      *
+     * D-1168: `$alsoOrders` are read by their number whatever eBay says of them — parcels he sends a second time stay on
+     * the page after eBay's last change is older than the window.
+     *
      * @param string|null $labelledSince ISO 8601 UTC
+     * @param list<string> $alsoOrders
      * @return list<OpenShipment> oldest first
      */
-    public function open(string $accessToken, ?string $labelledSince = null): array
+    public function open(string $accessToken, ?string $labelledSince = null, array $alsoOrders = []): array
     {
         $open = $this->read($accessToken, 'orderfulfillmentstatus:{NOT_STARTED|IN_PROGRESS}');
 
@@ -41,6 +45,13 @@ final class ShippingClient
             // eBay accepts only {NOT_STARTED|IN_PROGRESS} or {FULFILLED|IN_PROGRESS}; IN_PROGRESS came with the first read.
             $recent = $this->read($accessToken, 'lastmodifieddate:[' . $labelledSince . '..],orderfulfillmentstatus:{FULFILLED|IN_PROGRESS}');
             $open = [...$open, ...array_filter($recent, static fn (OpenShipment $sale): bool => $sale->labelled)];
+        }
+
+        $seen = array_flip(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $open));
+        $missing = array_values(array_filter(array_unique($alsoOrders), static fn (string $id): bool => $id !== '' && ! isset($seen[$id])));
+
+        foreach (array_chunk($missing, self::PAGE_SIZE) as $chunk) {
+            $open = [...$open, ...$this->readQuery($accessToken, ['orderIds' => implode(',', $chunk)])];
         }
 
         usort($open, static fn (OpenShipment $a, OpenShipment $b): int => strcmp($a->orderedAt, $b->orderedAt));
@@ -51,8 +62,16 @@ final class ShippingClient
     /** @return list<OpenShipment> */
     private function read(string $accessToken, string $filter): array
     {
-        $url = $this->environment->apiHost() . '/sell/fulfillment/v1/order?' . http_build_query([
-            'filter' => $filter,
+        return $this->readQuery($accessToken, ['filter' => $filter]);
+    }
+
+    /**
+     * @param array<string, string> $query
+     * @return list<OpenShipment>
+     */
+    private function readQuery(string $accessToken, array $query): array
+    {
+        $url = $this->environment->apiHost() . '/sell/fulfillment/v1/order?' . http_build_query($query + [
             'limit'  => self::PAGE_SIZE,
         ], '', '&', PHP_QUERY_RFC3986);
         $found = [];

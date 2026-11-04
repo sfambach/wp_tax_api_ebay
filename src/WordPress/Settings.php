@@ -5,6 +5,7 @@ namespace TaxEbay\WordPress;
 use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\Environment;
 use TaxEbay\Core\OAuth\AppKeys;
+use TaxEbay\Core\Shipping\Resends;
 use TaxEbay\Core\Shipping\Stages;
 use Taxmod\Core\Import\SecretBox;
 use Taxmod\WordPress\Import\Vault;
@@ -27,6 +28,8 @@ final class Settings
     public const ACCESS_TOKEN = 'taxebay_access_token';
     /** Open buyer inquiries and cases as eBay named them at the last refresh, per order. */
     public const DISPUTES = 'taxmod_ebay_disputes';
+    /** Parcels sent a second time (D-1168), per order. */
+    public const RESENDS = 'taxmod_ebay_resends';
     private const PACKED_BEFORE_STAGES = 'taxmod_ebay_packed';
     public const INSERT_A6 = 'a6';
     public const INSERT_LABEL = 'label62';
@@ -204,8 +207,11 @@ final class Settings
     {
         $kept = array_filter(self::stages(), static fn (array $note): bool => $note['at'] > $now - self::STAGE_DAYS * 86400);
 
+        $resent = self::resends();
+
         foreach ($orderIds as $orderId) {
-            if ($stage === Stages::OPEN) {
+            // A resent parcel eBay counts as shipped would fall back to «shipped» without his note (D-1168).
+            if ($stage === Stages::OPEN && ! isset($resent[$orderId])) {
                 unset($kept[$orderId]);
             } else {
                 $kept[$orderId] = ['stage' => $stage, 'at' => $now];
@@ -214,6 +220,27 @@ final class Settings
 
         update_option(self::STAGES, $kept, false);
         delete_option(self::PACKED_BEFORE_STAGES);
+    }
+
+    /** @return array<string, list<array<string, mixed>>> order id → its resends (D-1168); `mixed`: the note's fields */
+    public static function resends(): array
+    {
+        $stored = get_option(self::RESENDS, []);
+        $out = [];
+
+        foreach (is_array($stored) ? $stored : [] as $orderId => $entries) {
+            if (is_array($entries)) {
+                $out[(string) $orderId] = array_values(array_filter($entries, 'is_array'));
+            }
+        }
+
+        return Resends::kept($out, time());
+    }
+
+    /** @param array<string, list<array<string, mixed>>> $resends */
+    public static function saveResends(array $resends): void
+    {
+        update_option(self::RESENDS, Resends::kept($resends, time()), false);
     }
 
     /** @return array<string, string> order id → tracking numbers, comma-separated */

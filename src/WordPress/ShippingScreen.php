@@ -9,6 +9,7 @@ use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
+use TaxEbay\Core\Shipping\Resends;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
 
@@ -20,6 +21,12 @@ use TaxEbay\Core\Shipping\Stages;
  */
 final class ShippingScreen
 {
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $resends = [];
+
+    /** @var array<int, string>|null */
+    private ?array $lossLots = null;
+
     public const PAGE = 'taxebay-shipping';
     public const SHIP = 'taxebay_ship';
     public const INSERT = 'taxebay_insert';
@@ -40,6 +47,10 @@ final class ShippingScreen
     public const REFRESH_AT_ONCE = 10;
     /** Query argument naming the parcel whose history opens after a refresh. */
     public const OPEN_HISTORY = 'taxebay_open';
+    /** D-1168: send a parcel a second time, enter the new parcel's number, take the resend back. */
+    public const RESEND = 'taxebay_resend';
+    public const RESEND_TRACKING = 'taxebay_resend_tracking';
+    public const RESEND_UNDO = 'taxebay_resend_undo';
 
     /**
      * The shipping list in the modeller's shared list page (D-989): tabs by stage (D-985), search and filters, rows with
@@ -52,9 +63,14 @@ final class ShippingScreen
      * @param array<string, array<string, mixed>> $carrier order id → what the DHL module says; `mixed`: its array
      * @param array<string, string> $labelLinks order id → the DHL label link whose recipient is this parcel's
      * @param array<string, list<array{kind: string, id: string, status: string, respond_by: string}>> $disputes order id → open inquiries and cases
+     * @param array<string, list<array<string, mixed>>> $resends order id → its resends (D-1168); `mixed`: Resends' note
+     * @param array<int, string>|null $lossLots lot → name, the stock the goods of a resend can leave; null without the stock module
      */
-    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = [], array $disputes = []): string
+    public function page(array|string $open, array $notices, string $seller, array $stages, string $tab, int $now, ParcelList $list = new ParcelList(), array $dhlLabels = [], array $carrier = [], array $labelLinks = [], array $disputes = [], array $resends = [], ?array $lossLots = null): string
     {
+        $this->resends = $resends;
+        $this->lossLots = $lossLots;
+
         if (! method_exists(ListPage::class, 'searchBox')) {
             return '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1><div class="notice notice-error inline"><p>'
                 . esc_html__('This page needs Taxonomy Modeller 0.1.65 or newer.', 'taxebay') . '</p></div></div>';
@@ -229,6 +245,7 @@ final class ShippingScreen
             implode('<br>', $items),
             esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
             ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
+                . $this->resendNote($ids)
                 . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>' . esc_html(self::carrierName($carrier) . ': ' . self::carrierWord($carrier)) . '</small>')
                     . (isset($carrier['checked_at']) && is_numeric($carrier['checked_at']) ? '<br><small style="color:#646970">' . esc_html(sprintf(
                         /* translators: %s: date and time */
@@ -324,6 +341,8 @@ final class ShippingScreen
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary small', 'submit', false, $paid ? null : ['disabled' => 'disabled']) . '</form>';
         }
 
+        $tools .= $this->resendTools($parcel, $ids, $orders, $key, $stage);
+
         $links = '<a href="' . esc_url(self::ebayOrderUrl($first->orderId)) . '" target="_blank" rel="noopener">' . esc_html__('Open at eBay', 'taxebay') . '</a>'
             . ($stage === Stages::RECEIVED ? ' · <a href="' . esc_url('https://www.ebay.de/fdbk/leave_feedback') . '" target="_blank" rel="noopener">' . esc_html__('Leave feedback', 'taxebay') . '</a>' : '');
 
@@ -362,6 +381,118 @@ final class ShippingScreen
 
         return $number . '<details' . ($open ? ' open' : '') . '><summary style="cursor:pointer;' . $style . '"><small>' . esc_html(self::carrierName($carrier ?? [])) . ': ' . $newest . '</small></summary>'
             . '<ol style="margin:6px 0 0 1.2em;font-size:12px">' . implode('', array_map(static fn (string $line): string => '<li>' . $line . '</li>', $lines)) . '</ol></details>';
+    }
+
+    /** @return array<string, string> reason → its name */
+    public static function reasonNames(): array
+    {
+        return [
+            Resends::LOST     => __('lost in the post', 'taxebay'),
+            Resends::DAMAGED  => __('arrived damaged', 'taxebay'),
+            Resends::RETURNED => __('returned to sender', 'taxebay'),
+            Resends::OTHER    => __('other', 'taxebay'),
+        ];
+    }
+
+    /**
+     * Under the tracking number: which parcel this is, and the number of the first one (D-1168).
+     *
+     * @param list<string> $ids
+     */
+    private function resendNote(array $ids): string
+    {
+        $latest = Resends::latest($this->resends, $ids);
+
+        if ($latest === null) {
+            return '';
+        }
+
+        $previous = (string) ($latest['previous_tracking'] ?? '');
+
+        return '<br><small style="color:#b26200">' . esc_html(sprintf(
+            /* translators: 1: how many times sent again, 2: reason */
+            __('sent again (%1$d×): %2$s', 'taxebay'),
+            Resends::count($this->resends, $ids),
+            self::reasonNames()[(string) ($latest['reason'] ?? '')] ?? (string) ($latest['reason'] ?? '')
+        )) . ($previous === '' ? '' : '<br>' . esc_html__('before:', 'taxebay') . ' <s>' . esc_html($previous) . '</s>') . '</small>';
+    }
+
+    /**
+     * «Send again» on a parcel that left, the new parcel's number while it has none, and taking the resend back — each
+     * through the modeller's dialog, buttons on the right (D-1168).
+     *
+     * @param non-empty-list<OpenShipment> $parcel
+     * @param list<string> $ids
+     */
+    private function resendTools(array $parcel, array $ids, string $orders, string $key, string $stage): string
+    {
+        if (! method_exists(ListPage::class, 'dialogAction')) {
+            return '';
+        }
+
+        $html = '';
+        $latest = Resends::latest($this->resends, $ids);
+
+        if (in_array($stage, Resends::FROM, true)) {
+            $reasons = '';
+
+            foreach (self::reasonNames() as $code => $name) {
+                $reasons .= '<option value="' . esc_attr($code) . '">' . esc_html($name) . '</option>';
+            }
+
+            $pieces = array_sum(array_map(static fn (OpenShipment $sale): int => array_sum(array_map(static fn (array $item): int => $item['quantity'], $sale->items)), $parcel));
+            $body = '<p><label>' . esc_html__('Reason', 'taxebay') . '<br><select name="reason">' . $reasons . '</select></label></p>'
+                . '<p><label>' . esc_html__('Tracking number of the new parcel (optional, can follow)', 'taxebay') . '<br><input type="text" name="tracking" style="width:18em"></label></p>';
+
+            if ($this->lossLots !== null) {
+                $lots = '<option value="0">' . esc_html__('— no stock booking —', 'taxebay') . '</option>';
+
+                foreach ($this->lossLots as $lot => $name) {
+                    $lots .= '<option value="' . esc_attr((string) $lot) . '">' . esc_html($name) . '</option>';
+                }
+
+                $body .= '<p><label>' . esc_html__('Goods sent again, taken from', 'taxebay') . '<br><select name="lot" style="max-width:28em">' . $lots . '</select></label></p>'
+                    . '<p><label>' . esc_html__('Quantity', 'taxebay') . ' <input type="text" inputmode="decimal" name="quantity" value="' . esc_attr((string) max(1, $pieces)) . '" style="width:5em"></label></p>';
+            }
+
+            $body .= '<p><label>' . esc_html__('Note (optional)', 'taxebay') . '<br><input type="text" name="note" style="width:24em;max-width:100%"></label></p>'
+                . '<p class="description">' . esc_html__('The parcel goes back to «Open» for a new insert and label. The goods sent again leave stock as a loss (consumption naming the sale). The first tracking number stays on record. eBay is not told — add the new number there by hand.', 'taxebay') . '</p>';
+
+            $html .= self::resendForm(self::RESEND, $orders, ListPage::dialogAction($key . '-resend', __('Send again', 'taxebay'), __('Send this parcel again', 'taxebay'), $body, 'go', '1', __('Send again', 'taxebay')));
+        }
+
+        if ($latest === null) {
+            return $html === '' ? '' : '<p style="margin:0 0 8px;text-align:right">' . $html . '</p>';
+        }
+
+        if ((string) ($latest['tracking'] ?? '') === '') {
+            $field = '<p><label>' . esc_html__('Tracking number of the new parcel', 'taxebay') . '<br><input type="text" name="tracking" required style="width:18em"></label></p>'
+                . '<p class="description">' . esc_html__('Kept with the sale next to the first number and asked of the carrier from now on; eBay is not told.', 'taxebay') . '</p>';
+            $html .= self::resendForm(self::RESEND_TRACKING, $orders, ListPage::dialogAction($key . '-resend-tracking', __('Add tracking number', 'taxebay'), __('Tracking number of the new parcel', 'taxebay'), $field, 'go', '1', __('Add', 'taxebay')));
+        }
+
+        $undo = '<p>' . esc_html(sprintf(
+            /* translators: %s: date */
+            __('Takes back the resend of %s:', 'taxebay'),
+            wp_date('d.m.Y H:i', (int) ($latest['at'] ?? 0))
+        )) . '</p><ul style="list-style:disc;margin-left:1.5em">'
+            . ((int) ($latest['deal'] ?? 0) > 0 ? '<li>' . esc_html__('the loss booking is cancelled (Storno), the goods are in stock again', 'taxebay') . '</li>' : '')
+            . ((string) ($latest['tracking'] ?? '') !== '' ? '<li>' . esc_html__('the new tracking number is taken off the sale', 'taxebay') . '</li>' : '')
+            . '<li>' . esc_html(sprintf(
+                /* translators: %s: name of a tab */
+                __('the parcel goes back to «%s»', 'taxebay'),
+                self::stageName((string) ($latest['previous_stage'] ?? Stages::SHIPPED))
+            )) . '</li></ul>';
+        $html .= self::resendForm(self::RESEND_UNDO, $orders, ListPage::dialogAction($key . '-resend-undo', __('Take resend back', 'taxebay'), __('Take resend back', 'taxebay'), $undo, 'go', '1', __('Take back', 'taxebay')));
+
+        return '<p style="margin:0 0 8px;text-align:right">' . $html . '</p>';
+    }
+
+    private static function resendForm(string $action, string $orders, string $dialog): string
+    {
+        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline">'
+            . '<input type="hidden" name="action" value="' . esc_attr($action) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
+            . wp_nonce_field($action, '_wpnonce', true, false) . $dialog . '</form> ';
     }
 
     /** The order number opens the sale at eBay in a new tab (his wish, 2026-10-28). */

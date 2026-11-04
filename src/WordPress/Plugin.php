@@ -19,6 +19,7 @@ use TaxEbay\Core\Shipping\LabelText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
+use TaxEbay\Core\Shipping\Resends;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
 
@@ -39,7 +40,12 @@ final class Plugin
     /** A buyer's inquiry waits days for an answer; three hours keep the Post-Order calls far below their cap. */
     private const DISPUTE_CHECK_SECONDS = 3 * 3600;
 
-    public const VERSION    = '0.0.68';
+    /** D-1168: the stock module's filters for a resend's goods (wp_tax_stock ≥ 0.42.0). */
+    private const LOSS_LOTS = 'taxmod_stock_loss_lots';
+    private const BOOK_LOSS = 'taxmod_stock_book_loss';
+    private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
+
+    public const VERSION    = '0.0.69';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -77,6 +83,9 @@ final class Plugin
         add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
         add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->handleLabelPrinted(...));
         add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
+        add_action('admin_post_' . ShippingScreen::RESEND, $plugin->handleResend(...));
+        add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->handleResendTracking(...));
+        add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->handleResendUndo(...));
     }
 
     /**
@@ -307,8 +316,10 @@ final class Plugin
             }
 
             $labels = self::dhlLabels();
+            // D-1168: the stock a resend's goods can leave; only on the tabs a resend starts from.
+            $lossLots = in_array($tab, Resends::FROM, true) && has_filter(self::LOSS_LOTS) ? (array) apply_filters(self::LOSS_LOTS, []) : null;
 
-            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : [], $disputes);
+            print (new ShippingScreen())->page($open, $this->takeNotices(), self::seller(), $stages, $tab, time(), $list, $labels, $carrier, is_array($open) ? self::labelsByOrder($open, $labels) : [], $disputes, Settings::resends(), $lossLots);
         });
 
         if ($hook !== false) {
@@ -404,6 +415,154 @@ final class Plugin
 
         wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
         exit;
+    }
+
+    /**
+     * D-1168: the parcel goes out a second time. The goods leave stock as a loss naming the sale, the parcel goes back to
+     * «Open», the first tracking number stays on record. eBay is not told.
+     */
+    public function handleResend(): void
+    {
+        $this->guard(ShippingScreen::RESEND);
+        $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        $reason = isset($_POST['reason']) ? sanitize_key(wp_unslash($_POST['reason'])) : '';
+        $reason = in_array($reason, Resends::REASONS, true) ? $reason : Resends::OTHER;
+        $note = isset($_POST['note']) ? sanitize_text_field(wp_unslash($_POST['note'])) : '';
+        $tracking = Resends::cleanNumber(isset($_POST['tracking']) ? sanitize_text_field(wp_unslash($_POST['tracking'])) : '');
+        $lot = absint($_POST['lot'] ?? 0);
+        $quantity = isset($_POST['quantity']) ? sanitize_text_field(wp_unslash($_POST['quantity'])) : '1';
+
+        try {
+            $sales = self::openSales($orders);
+
+            if ($sales === []) {
+                throw new EbayApiException(__('Order not found at eBay.', 'taxebay'));
+            }
+
+            $ids = array_map(static fn (OpenShipment $sale): string => $sale->orderId, $sales);
+            $stages = Settings::stages();
+            $stage = Stages::of($sales, $stages, time());
+            $known = Settings::trackingNumbers();
+            $resends = Settings::resends();
+            $previous = Resends::trackingOf($resends, $ids) ?: implode(', ', array_unique(array_filter(array_map(static fn (string $id): string => $known[$id] ?? '', $ids))));
+            $sale = SaleRecord::lookup();
+            $deal = 0;
+
+            if ($lot > 0) {
+                $record = $sale?->find($ids[0]);
+                $booked = apply_filters(self::BOOK_LOSS, null, [
+                    'sale'     => $record?->recordId ?? 0,
+                    'lot'      => $lot,
+                    'quantity' => $quantity,
+                    /* translators: 1: reason, 2: eBay order numbers */
+                    'reason'   => sprintf(__('Verlust: Ersatzversand (%1$s) · eBay %2$s', 'taxebay'), ShippingScreen::reasonNames()[$reason], implode(', ', $ids)) . ($note === '' ? '' : ' · ' . $note),
+                    'date'     => current_time('Y-m-d'),
+                    /* translators: %s: eBay order numbers */
+                    'title'    => sprintf(__('Verlust Ersatzversand eBay %s', 'taxebay'), implode(', ', $ids)),
+                ]);
+
+                if ($booked instanceof \WP_Error) {
+                    throw new EbayApiException($booked->get_error_message());
+                }
+
+                if (! is_int($booked)) {
+                    throw new EbayApiException(__('The stock module did not book the goods — is Taxmod Stock 0.42.0 or newer active?', 'taxebay'));
+                }
+
+                $deal = $booked;
+            }
+
+            Settings::saveResends(Resends::add($resends, $ids, [
+                'at' => time(), 'reason' => $reason, 'note' => $note, 'tracking' => $tracking, 'previous_tracking' => $previous,
+                'previous_stage' => $stage, 'deal' => $deal, 'who' => wp_get_current_user()->display_name,
+            ]));
+            Settings::saveStage($ids, Stages::OPEN, time());
+
+            if ($tracking !== '' && $sale !== null) {
+                $this->keepOnSale($sale->addTracking($ids[0], $tracking));
+            }
+
+            /* translators: %s: eBay order numbers */
+            $this->notice(true, sprintf(__('%s goes out again: back in «Open».', 'taxebay'), implode(', ', $ids)) . ($deal > 0 ? ' ' . __('The goods are booked as a loss.', 'taxebay') : ''));
+        } catch (EbayApiException | SecretDoesNotOpen $failure) {
+            $this->notice(false, $failure->getMessage());
+        }
+
+        wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        exit;
+    }
+
+    /** D-1168: the new parcel's number, entered when the label came after the resend (his case: DHL sent it by mail). */
+    public function handleResendTracking(): void
+    {
+        $this->guard(ShippingScreen::RESEND_TRACKING);
+        $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        $tracking = Resends::cleanNumber(isset($_POST['tracking']) ? sanitize_text_field(wp_unslash($_POST['tracking'])) : '');
+        $resends = Settings::resends();
+
+        if ($tracking === '' || Resends::latest($resends, $orders) === null) {
+            $this->notice(false, __('Enter the tracking number of the new parcel.', 'taxebay'));
+        } else {
+            Settings::saveResends(Resends::withTracking($resends, $orders, $tracking));
+            $sale = SaleRecord::lookup();
+
+            if ($sale !== null) {
+                $this->keepOnSale($sale->addTracking($orders[0], $tracking));
+            }
+
+            /* translators: %s: tracking number */
+            $this->notice(true, sprintf(__('Tracking number %s kept for the new parcel.', 'taxebay'), $tracking));
+        }
+
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        exit;
+    }
+
+    /** D-1168, his rule «jeder Schritt rückgängig»: the loss is cancelled, the number taken off, the stage restored. */
+    public function handleResendUndo(): void
+    {
+        $this->guard(ShippingScreen::RESEND_UNDO);
+        $orders = self::orderIds(isset($_POST['orders']) ? sanitize_text_field(wp_unslash($_POST['orders'])) : '');
+        [$kept, $latest] = Resends::undo(Settings::resends(), $orders);
+
+        if ($latest === null) {
+            $this->notice(false, __('Nothing to take back.', 'taxebay'));
+            wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+            exit;
+        }
+
+        if ((int) ($latest['deal'] ?? 0) > 0) {
+            $cancelled = apply_filters(self::CANCEL_LOSS, null, ['deal' => (int) $latest['deal'], 'who' => wp_get_current_user()->display_name]);
+
+            if (! is_int($cancelled)) {
+                $this->notice(false, $cancelled instanceof \WP_Error ? $cancelled->get_error_message() : __('The stock module did not cancel the loss — is Taxmod Stock active?', 'taxebay'));
+                wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+                exit;
+            }
+        }
+
+        Settings::saveResends($kept);
+        $tracking = (string) ($latest['tracking'] ?? '');
+        $sale = $tracking === '' ? null : SaleRecord::lookup();
+
+        if ($sale !== null) {
+            $this->keepOnSale($sale->removeTracking($orders[0], $tracking));
+        }
+
+        $stage = (string) ($latest['previous_stage'] ?? Stages::SHIPPED);
+        Settings::saveStage($orders, in_array($stage, Stages::ALL, true) ? $stage : Stages::SHIPPED, time());
+        /* translators: %s: eBay order numbers */
+        $this->notice(true, sprintf(__('Resend of %s taken back.', 'taxebay'), implode(', ', $orders)));
+        wp_safe_redirect(admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        exit;
+    }
+
+    private function keepOnSale(true|\WP_Error $written): void
+    {
+        if ($written instanceof \WP_Error) {
+            /* translators: %s: error message */
+            $this->notice(false, sprintf(__('The tracking number could not be written to the sale: %s', 'taxebay'), $written->get_error_message()));
+        }
     }
 
     /** Ticked rows move to the tab the bulk action names (ListPage's bulk bar posts the handler as its action). */
@@ -637,7 +796,7 @@ final class Plugin
      */
     private static function openSales(array $orderIds): array
     {
-        return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince()), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
+        return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince(), array_keys(Settings::resends())), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
     }
 
     /**
@@ -745,7 +904,7 @@ final class Plugin
             $noted = Settings::disputes();
             $found = [];
 
-            foreach (Parcels::of($client->open($token, self::labelledSince())) as $parcel) {
+            foreach (Parcels::of($client->open($token, self::labelledSince(), array_keys(Settings::resends()))) as $parcel) {
                 if (Stages::of($parcel, $stages, time()) !== Stages::SHIPPED) {
                     continue;
                 }
@@ -847,7 +1006,8 @@ final class Plugin
     private static function shownWithTracking(string $token, string $tab, array &$stages, ParcelList $list, array &$carrier, array &$disputes = []): array
     {
         $client = self::shippingClient();
-        $open = $client->open($token, self::labelledSince());
+        $resends = Settings::resends();
+        $open = $client->open($token, self::labelledSince(), array_keys($resends));
         $shown = [];
         $inTab = array_values(array_filter(Parcels::of($open), static fn (array $parcel): bool => Stages::of($parcel, $stages, time()) === $tab));
 
@@ -869,6 +1029,8 @@ final class Plugin
             array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked),
             array_map(static fn (OpenShipment $sale): string => $sale->tracking, $tracked)
         ) ?: [], static fn (string $number): bool => $number !== ''), time());
+        // D-1168: a parcel sent again is followed by its new number, which eBay may never learn.
+        $tracked = array_map(static fn (OpenShipment $sale): OpenShipment => ($new = Resends::trackingOf($resends, [$sale->orderId])) === '' ? $sale : $sale->withTracking($new), $tracked);
         $byId = array_combine(array_map(static fn (OpenShipment $sale): string => $sale->orderId, $tracked), $tracked);
         // Only what DHL said last; asking anew is a click away (his wish, 2026-10-27), so the page loads fast.
         self::lastCarrierWord($tracked, $carrier);
