@@ -71,9 +71,9 @@ final class ShippingScreen
         $this->resends = $resends;
         $this->lossLots = $lossLots;
 
-        if (! method_exists(ListPage::class, 'searchBox')) {
+        if (! method_exists(ListPage::class, 'confirm')) {
             return '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1><div class="notice notice-error inline"><p>'
-                . esc_html__('This page needs Taxonomy Modeller 0.1.65 or newer.', 'taxebay') . '</p></div></div>';
+                . esc_html__('This page needs Taxonomy Modeller 0.1.175 or newer.', 'taxebay') . '</p></div></div>';
         }
 
         $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
@@ -330,10 +330,10 @@ final class ShippingScreen
                 $carriers .= '<option value="' . esc_attr($code) . '">' . esc_html($label) . '</option>';
             }
 
-            $tools .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(' . esc_attr((string) wp_json_encode(
+            $tools .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"' . ListPage::confirm(
                 /* translators: %s: eBay order numbers */
                 sprintf(__('Report %s as shipped to eBay? The buyer is notified.', 'taxebay'), implode(', ', $ids))
-            )) . ')">'
+            ) . '>'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
                 . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
                 . '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
