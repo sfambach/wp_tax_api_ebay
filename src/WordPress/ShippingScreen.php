@@ -72,7 +72,7 @@ final class ShippingScreen
         $this->lossLots = $lossLots;
 
         if (! method_exists(ListPage::class, 'confirm')) {
-            return '<div class="wrap"><h1>' . esc_html__('eBay shipping', 'taxebay') . '</h1><div class="notice notice-error inline"><p>'
+            return '<div class="wrap"><div class="notice notice-error inline"><p>'
                 . esc_html__('This page needs Taxonomy Modeller 0.1.175 or newer.', 'taxebay') . '</p></div></div>';
         }
 

@@ -217,7 +217,7 @@ final class SettingsScreen
     /** @param list<array{ok: bool, text: string}> $notices */
     public function page(array $notices): string
     {
-        return '<div class="wrap"><h1>' . esc_html__('eBay connection', 'taxebay') . '</h1>'
+        return '<div class="wrap">' . (class_exists(\Taxmod\WordPress\Admin\ListPage::class) ? \Taxmod\WordPress\Admin\ListPage::heading(__('eBay connection', 'taxebay'), Plugin::VERSION) : '')
             . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . '<input type="hidden" name="action" value="taxebay_save_keys">' . wp_nonce_field('taxebay_save_keys', '_wpnonce', true, false)
             . $this->fields($notices)
