@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.72';
+    public const VERSION    = '0.0.73';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -68,12 +68,9 @@ final class Plugin
         add_action('admin_menu', $plugin->registerShippingPage(...), 21);
 
         // ⚠️ *Only where admin-post.php answers: `ShippingScreen::…` alone compiled the 38 KB shipping page on every page view (D-1187).
-        // Asked on plugins_loaded: this plugin loads before the modeller.*
-        add_action('plugins_loaded', static function () use ($plugin): void {
-            if (method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') && ! \Taxmod\WordPress\Plugin::handlesAdminActions()) {
-                return;
-            }
-
+        // boot() itself runs on plugins_loaded, after the modeller has loaded; a second plugins_loaded hook added here never ran
+        // and left every eBay action without its handler (0.0.73).*
+        if (! method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') || \Taxmod\WordPress\Plugin::handlesAdminActions()) {
             add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
             add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
             add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
@@ -92,7 +89,7 @@ final class Plugin
             add_action('admin_post_' . ShippingScreen::RESEND, $plugin->handleResend(...));
             add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->handleResendTracking(...));
             add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->handleResendUndo(...));
-        });
+        }
     }
 
     /**
