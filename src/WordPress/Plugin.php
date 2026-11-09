@@ -46,7 +46,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.75';
+    public const VERSION    = '0.0.76';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 

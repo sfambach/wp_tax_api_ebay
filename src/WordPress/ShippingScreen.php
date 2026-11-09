@@ -618,10 +618,15 @@ final class ShippingScreen
         return ($carrier['known'] ?? true) === false ? __('unknown to DHL', 'taxebay') : (string) ($carrier['stage'] ?? '');
     }
 
-    // Icons keep the row's buttons inside the fixed actions column of the shared list (D-989).
+    // Icons keep the row's buttons inside the fixed actions column of the shared list (D-989); their size is the one set in
+    // the modeller, never fixed here (D-1269). The button carries the name, so the icon is decorative.
     private static function icon(string $name): string
     {
-        return '<span class="dashicons dashicons-' . esc_attr($name) . '" style="font-size:16px;width:16px;height:16px;vertical-align:middle" aria-hidden="true"></span>';
+        if (method_exists(\Taxmod\Core\Renderer\IconMarkup::class, 'dashicon')) {
+            return \Taxmod\Core\Renderer\IconMarkup::dashicon($name);
+        }
+
+        return '<span class="dashicons dashicons-' . esc_attr($name) . '" aria-hidden="true"></span>';
     }
 
     private static function insertUrl(string $orders): string
