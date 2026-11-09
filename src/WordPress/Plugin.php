@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.73';
+    public const VERSION    = '0.0.74';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -71,24 +71,24 @@ final class Plugin
         // boot() itself runs on plugins_loaded, after the modeller has loaded; a second plugins_loaded hook added here never ran
         // and left every eBay action without its handler (0.0.73).*
         if (! method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') || \Taxmod\WordPress\Plugin::handlesAdminActions()) {
-            add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
-            add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
-            add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
-            add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
-            add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
-            add_action('admin_post_taxebay_export', $plugin->handleExport(...));
-            add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
-            add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
-            add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
+            add_action('admin_post_taxebay_save_keys', $plugin->safely($plugin->handleSaveKeys(...)));
+            add_action('admin_post_taxebay_connect', $plugin->safely($plugin->handleConnect(...)));
+            add_action('admin_post_taxebay_return', $plugin->safely($plugin->handleReturn(...)));
+            add_action('admin_post_taxebay_check', $plugin->safely($plugin->handleCheck(...)));
+            add_action('admin_post_taxebay_disconnect', $plugin->safely($plugin->handleDisconnect(...)));
+            add_action('admin_post_taxebay_export', $plugin->safely($plugin->handleExport(...)));
+            add_action('admin_post_taxebay_ship', $plugin->safely($plugin->handleShip(...)));
+            add_action('admin_post_taxebay_insert', $plugin->safely($plugin->handleInsert(...)));
+            add_action('admin_post_taxebay_stage', $plugin->safely($plugin->handleStage(...)));
             foreach (Stages::ALL as $stage) {
-                add_action('admin_post_' . ShippingScreen::BULK_TO . $stage, $plugin->handleBulkStage(...));
+                add_action('admin_post_' . ShippingScreen::BULK_TO . $stage, $plugin->safely($plugin->handleBulkStage(...)));
             }
-            add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
-            add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->handleLabelPrinted(...));
-            add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
-            add_action('admin_post_' . ShippingScreen::RESEND, $plugin->handleResend(...));
-            add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->handleResendTracking(...));
-            add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->handleResendUndo(...));
+            add_action('admin_post_taxebay_label_pdf', $plugin->safely($plugin->handleLabelPdf(...)));
+            add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->safely($plugin->handleLabelPrinted(...)));
+            add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->safely($plugin->handleDhlRefresh(...)));
+            add_action('admin_post_' . ShippingScreen::RESEND, $plugin->safely($plugin->handleResend(...)));
+            add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->safely($plugin->handleResendTracking(...)));
+            add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->safely($plugin->handleResendUndo(...)));
         }
     }
 
@@ -183,7 +183,7 @@ final class Plugin
     public function handleReturn(): void
     {
         if (! current_user_can(self::CAPABILITY)) {
-            wp_die(esc_html__('You may not change the eBay connection.', 'taxebay'), 403);
+            self::fail(__('You may not change the eBay connection.', 'taxebay'));
         }
 
         $key = self::STATE . get_current_user_id();
@@ -192,7 +192,7 @@ final class Plugin
         $state = isset($_GET['state']) ? sanitize_text_field(wp_unslash($_GET['state'])) : '';
 
         if ($expected === '' || ! hash_equals($expected, $state)) {
-            wp_die(esc_html__('This answer from eBay does not belong to a connection you started. Please connect again.', 'taxebay'), 403);
+            self::fail(__('This answer from eBay does not belong to a connection you started. Please connect again.', 'taxebay'));
         }
 
         $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
@@ -648,13 +648,13 @@ final class Plugin
         $url = isset($_GET['url']) ? esc_url_raw(wp_unslash($_GET['url']), ['https']) : '';
 
         if (! DhlLabelLink::accepts($url)) {
-            wp_die(esc_html__('That is not a DHL label link.', 'taxebay'), 400);
+            self::fail(__('That is not a DHL label link.', 'taxebay'));
         }
 
         $body = self::labelPdf($url);
 
         if ($body === null) {
-            wp_die(esc_html__('DHL did not hand out the label — the link may have expired.', 'taxebay'), 502);
+            self::fail(__('DHL did not hand out the label — the link may have expired.', 'taxebay'));
         }
 
         nocache_headers();
@@ -674,7 +674,7 @@ final class Plugin
         $url = isset($_POST['url']) ? esc_url_raw(wp_unslash($_POST['url']), ['https']) : '';
 
         if (! DhlLabelLink::accepts($url)) {
-            wp_die(esc_html__('That is not a DHL label link.', 'taxebay'), 400);
+            self::fail(__('That is not a DHL label link.', 'taxebay'));
         }
 
         foreach (self::dhlLabels() as $label) {
@@ -772,11 +772,11 @@ final class Plugin
         try {
             $sales = self::openSales(self::orderIds(isset($_GET['orders']) ? sanitize_text_field(wp_unslash($_GET['orders'])) : ''));
         } catch (EbayApiException | SecretDoesNotOpen $failure) {
-            wp_die(esc_html($failure->getMessage()));
+            self::fail($failure->getMessage());
         }
 
         if ($sales === []) {
-            wp_die(esc_html__('Order not open any more.', 'taxebay'));
+            self::fail(__('Order not open any more.', 'taxebay'));
         }
 
         nocache_headers();
@@ -1128,13 +1128,58 @@ final class Plugin
     }
 
     /** CD-5, in this order: capability, then nonce. */
+    /**
+     * No act ends on an empty page (D-1254): the modeller's `ListPage::act` catches the failure, logs it and shows it on the
+     * page the button sat on. An older modeller gets the same from here.
+     */
+    private function safely(\Closure $handler): \Closure
+    {
+        return function () use ($handler): void {
+            if (method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'act')) {
+                \Taxmod\WordPress\Admin\ListPage::act(static function () use ($handler): string {
+                    $handler();
+
+                    return '';
+                });
+            }
+
+            try {
+                $handler();
+            } catch (\Throwable $failure) {
+                error_log('taxebay: ' . $failure::class . ': ' . $failure->getMessage() . ' @ ' . $failure->getFile() . ':' . $failure->getLine());
+                self::fail($failure->getMessage());
+            }
+        };
+    }
+
+    /** A refusal with its message and the way back (D-1254), never a bare `wp_die()`. */
+    private static function fail(string $message): never
+    {
+        if (method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'fail')) {
+            \Taxmod\WordPress\Admin\ListPage::fail($message);
+        }
+
+        $back = (string) wp_get_referer();
+        wp_die(esc_html($message), esc_html__('eBay', 'taxebay'), ['response' => 200, 'link_url' => esc_url($back !== '' ? $back : admin_url('admin.php?page=' . ShippingScreen::PAGE)), 'link_text' => esc_html__('Back', 'taxebay')]);
+    }
+
     private function guard(string $action): void
     {
         if (! current_user_can(self::CAPABILITY)) {
-            wp_die(esc_html__('You may not change the eBay connection.', 'taxebay'), 403);
+            self::fail(__('You may not change the eBay connection.', 'taxebay'));
         }
 
-        check_admin_referer($action);
+        if (method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'nonce')) {
+            \Taxmod\WordPress\Admin\ListPage::nonce($action);
+
+            return;
+        }
+
+        $nonce = isset($_REQUEST['_wpnonce']) ? sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'])) : '';
+
+        if (! wp_verify_nonce($nonce, $action)) {
+            self::fail(__('The page was open too long — reload it and try again.', 'taxebay'));
+        }
     }
 
     private function keysOrBack(string $action): AppKeys
