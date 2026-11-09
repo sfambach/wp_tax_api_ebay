@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.71';
+    public const VERSION    = '0.0.72';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -64,28 +64,35 @@ final class Plugin
         add_filter('taxmod_import_sources', static fn (array $sources): array => [...$sources, new EbaySource()]);
         // ⚠️ *D-1006: the eBay mails are read here, not in Taxmod Mail, which only fetches them (needs modeller 0.1.81).*
         add_filter('taxmail_parsers', static fn (array $parsers): array => ($reader = self::mailReader()) === null ? $parsers : [...$parsers, $reader]);
-        add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
-        add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
-        add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
-        add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
         add_action('rest_api_init', AccountDeletionEndpoint::register(...));
-        add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
-        add_action('admin_post_taxebay_export', $plugin->handleExport(...));
         add_action('admin_menu', $plugin->registerShippingPage(...), 21);
-        add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
-        add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
-        add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
 
-        foreach (Stages::ALL as $stage) {
-            add_action('admin_post_' . ShippingScreen::BULK_TO . $stage, $plugin->handleBulkStage(...));
-        }
+        // ⚠️ *Only where admin-post.php answers: `ShippingScreen::…` alone compiled the 38 KB shipping page on every page view (D-1187).
+        // Asked on plugins_loaded: this plugin loads before the modeller.*
+        add_action('plugins_loaded', static function () use ($plugin): void {
+            if (method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') && ! \Taxmod\WordPress\Plugin::handlesAdminActions()) {
+                return;
+            }
 
-        add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
-        add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->handleLabelPrinted(...));
-        add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
-        add_action('admin_post_' . ShippingScreen::RESEND, $plugin->handleResend(...));
-        add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->handleResendTracking(...));
-        add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->handleResendUndo(...));
+            add_action('admin_post_taxebay_save_keys', $plugin->handleSaveKeys(...));
+            add_action('admin_post_taxebay_connect', $plugin->handleConnect(...));
+            add_action('admin_post_taxebay_return', $plugin->handleReturn(...));
+            add_action('admin_post_taxebay_check', $plugin->handleCheck(...));
+            add_action('admin_post_taxebay_disconnect', $plugin->handleDisconnect(...));
+            add_action('admin_post_taxebay_export', $plugin->handleExport(...));
+            add_action('admin_post_taxebay_ship', $plugin->handleShip(...));
+            add_action('admin_post_taxebay_insert', $plugin->handleInsert(...));
+            add_action('admin_post_taxebay_stage', $plugin->handleStage(...));
+            foreach (Stages::ALL as $stage) {
+                add_action('admin_post_' . ShippingScreen::BULK_TO . $stage, $plugin->handleBulkStage(...));
+            }
+            add_action('admin_post_taxebay_label_pdf', $plugin->handleLabelPdf(...));
+            add_action('admin_post_' . ShippingScreen::LABEL_PRINTED, $plugin->handleLabelPrinted(...));
+            add_action('admin_post_' . ShippingScreen::DHL_REFRESH, $plugin->handleDhlRefresh(...));
+            add_action('admin_post_' . ShippingScreen::RESEND, $plugin->handleResend(...));
+            add_action('admin_post_' . ShippingScreen::RESEND_TRACKING, $plugin->handleResendTracking(...));
+            add_action('admin_post_' . ShippingScreen::RESEND_UNDO, $plugin->handleResendUndo(...));
+        });
     }
 
     /**
