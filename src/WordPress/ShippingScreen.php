@@ -193,7 +193,7 @@ final class ShippingScreen
         return admin_url('admin.php?' . http_build_query(array_filter(array_merge($query, $change)), '', '&'));
     }
 
-    private static function stageName(string $stage): string
+    public static function stageName(string $stage): string
     {
         return match ($stage) {
             Stages::PACKED   => __('Packed', 'taxebay'),

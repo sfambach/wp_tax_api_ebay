@@ -111,6 +111,12 @@ final class ShippingTest extends TestCase
         self::assertSame(Stages::OPEN, Stages::of([OpenShipment::fromOrder($fresh)], [], $now));
         self::assertSame(Stages::SHIPPED, Stages::of([OpenShipment::fromOrder($old)], [], $now));
         self::assertSame(Stages::RECEIVED, Stages::of([OpenShipment::fromOrder($old)], ['O' => ['stage' => Stages::RECEIVED, 'at' => $now]], $now));
+
+        // D-1258: the counts of the Warenausgang's process bar, every stage present and in process order.
+        self::assertSame(
+            [Stages::OPEN => 2, Stages::PACKED => 0, Stages::SHIPPED => 0, Stages::RECEIVED => 1],
+            Stages::counts([[OpenShipment::fromOrder(self::order('N', '2026-10-01'))], [OpenShipment::fromOrder($fresh)], [OpenShipment::fromOrder($old)]], ['O' => ['stage' => Stages::RECEIVED, 'at' => $now]], $now),
+        );
         self::assertSame(Stages::SHIPPED, Stages::next(Stages::PACKED));
         self::assertNull(Stages::next(Stages::RECEIVED));
         self::assertNull(Stages::previous(Stages::OPEN));

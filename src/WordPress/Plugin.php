@@ -22,6 +22,7 @@ use TaxEbay\Core\Shipping\Parcels;
 use TaxEbay\Core\Shipping\Resends;
 use TaxEbay\Core\Shipping\ShippingClient;
 use TaxEbay\Core\Shipping\Stages;
+use Taxmod\WordPress\Admin\ListPage;
 
 /**
  * The boundary: menu, connect, the OAuth return, the connection test. It wires WordPress to the core and decides nothing.
@@ -45,7 +46,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.74';
+    public const VERSION    = '0.0.75';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -54,6 +55,9 @@ final class Plugin
 
     /** Messages for the next page view of one user, after a redirect. */
     private const NOTICES = 'taxebay_notices_';
+
+    /** D-1258: the stage counts of the last shipping page, so the Warenausgang's overview never calls eBay. */
+    private const STAGE_COUNTS = 'taxebay_stage_counts';
 
     public static function boot(): void
     {
@@ -66,6 +70,8 @@ final class Plugin
         add_filter('taxmail_parsers', static fn (array $parsers): array => ($reader = self::mailReader()) === null ? $parsers : [...$parsers, $reader]);
         add_action('rest_api_init', AccountDeletionEndpoint::register(...));
         add_action('admin_menu', $plugin->registerShippingPage(...), 21);
+        // D-1258: the Warenausgang's overview opens with the process bar of the stages this module owns until wp_tax_log_sales takes them.
+        add_filter('taxmod_logistics_process_bar', self::processBar(...), 10, 2);
 
         // ⚠️ *Only where admin-post.php answers: `ShippingScreen::…` alone compiled the 38 KB shipping page on every page view (D-1187).
         // boot() itself runs on plugins_loaded, after the modeller has loaded; a second plugins_loaded hook added here never ran
@@ -319,6 +325,10 @@ final class Plugin
                 $open = $failure->getMessage();
             }
 
+            if (is_array($open)) {
+                set_transient(self::STAGE_COUNTS, Stages::counts(Parcels::of($open), $stages, time()), DAY_IN_SECONDS);
+            }
+
             $labels = self::dhlLabels();
             // D-1168: the stock a resend's goods can leave; only on the tabs a resend starts from.
             $lossLots = in_array($tab, Resends::FROM, true) && has_filter(self::LOSS_LOTS) ? (array) apply_filters(self::LOSS_LOTS, []) : null;
@@ -329,6 +339,26 @@ final class Plugin
         if ($hook !== false) {
             add_action('load-' . $hook, self::enqueueLabelPrint(...));
         }
+    }
+
+    /**
+     * The Warenausgang's process bar (D-1258): the shipping stages with the counts of the last shipping page, each arrow into its
+     * tab; without those counts the stages stand bare. Never a call to eBay here.
+     */
+    public static function processBar(string $html, string $area): string
+    {
+        if ($area !== 'outbound' || $html !== '' || ! current_user_can(self::CAPABILITY) || ! method_exists(ListPage::class, 'steps')) {
+            return $html;
+        }
+
+        $counts = get_transient(self::STAGE_COUNTS);
+        $steps = [];
+
+        foreach (Stages::ALL as $stage) {
+            $steps[] = is_array($counts) && isset($counts[$stage]) ? [$stage, ShippingScreen::stageName($stage), (int) $counts[$stage]] : [$stage, ShippingScreen::stageName($stage)];
+        }
+
+        return ListPage::steps($steps, '', static fn (string $stage): string => admin_url('admin.php?page=' . ShippingScreen::PAGE . '&tab=' . $stage));
     }
 
     /** pdf.js ships with the plugin, so the label PDF is read in the browser and never uploaded. */

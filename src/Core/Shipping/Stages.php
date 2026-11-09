@@ -64,6 +64,24 @@ final class Stages
         return $target;
     }
 
+    /**
+     * How many parcels stand in each stage, in process order — the counts of the Warenausgang's process bar (D-1258).
+     *
+     * @param list<non-empty-list<OpenShipment>> $parcels
+     * @param array<string, array{stage: string, at: int}> $noted order id → his note
+     * @return array<string, int> stage → parcels
+     */
+    public static function counts(array $parcels, array $noted, int $now): array
+    {
+        $counts = array_fill_keys(self::ALL, 0);
+
+        foreach ($parcels as $parcel) {
+            $counts[self::of($parcel, $noted, $now)]++;
+        }
+
+        return $counts;
+    }
+
     public static function next(string $stage): ?string
     {
         $at = array_search($stage, self::ALL, true);
