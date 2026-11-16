@@ -58,6 +58,10 @@ final class SalesTest extends TestCase
             'source'        => 'ebay',
             'external_id'   => '12-34567-89012',
             'number_missing' => false,
+            'invoice' => null,
+            'expected_delivery' => null,
+            'delivery_window' => null,
+            'shipper' => null,
         ], $proposal);
         self::assertStringNotContainsString('Not To Be Stored', (string) json_encode($proposal));
     }

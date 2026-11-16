@@ -70,6 +70,10 @@ final class PurchasesTest extends TestCase
             'source'        => 'ebay',
             'external_id'   => '05-12345-67890',
             'number_missing' => false,
+            'invoice' => null,
+            'expected_delivery' => null,
+            'delivery_window' => null,
+            'shipper' => null,
         ], $mapper->map($order)->toArray());
         self::assertSame(['05-12345-67890', '05-12345-67890!5000000000001'], $mapper->orderNumbers($order));
         self::assertFalse($mapper->isCancelled($order));
