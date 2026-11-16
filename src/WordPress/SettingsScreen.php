@@ -217,12 +217,14 @@ final class SettingsScreen
     /** @param list<array{ok: bool, text: string}> $notices */
     public function page(array $notices): string
     {
-        return '<div class="wrap">' . (class_exists(\Taxmod\WordPress\Admin\ListPage::class) ? \Taxmod\WordPress\Admin\ListPage::heading(__('eBay connection', 'taxebay'), Plugin::VERSION) : '')
-            . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
+        // D-1373, G16: the shared template; D-1308: «Save» in the toolbar above the fields, not below them.
+        $form = '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">'
             . '<input type="hidden" name="action" value="taxebay_save_keys">' . wp_nonce_field('taxebay_save_keys', '_wpnonce', true, false)
+            . \Taxmod\WordPress\Admin\ListPage::toolbar([\Taxmod\Core\Renderer\ControlMarkup::button(\Taxmod\Core\Renderer\Control::saving('submit', '1', __('Save', 'taxebay'), __('Save', 'taxebay')))])
             . $this->fields($notices)
-            . get_submit_button(__('Save', 'taxebay'))
-            . '</form></div>';
+            . '</form>';
+
+        return \Taxmod\WordPress\Admin\ListPage::page(__('eBay connection', 'taxebay'), [], [['html' => $form]], Plugin::VERSION);
     }
 
     /** The secret is never sent back to the browser; an empty field keeps the stored one. */

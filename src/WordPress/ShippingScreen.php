@@ -52,6 +52,12 @@ final class ShippingScreen
     public const RESEND_TRACKING = 'taxebay_resend_tracking';
     public const RESEND_UNDO = 'taxebay_resend_undo';
 
+    /** D-1373, G16: the page in the shared template (heading, then its one section). */
+    private static function framed(string $body): string
+    {
+        return ListPage::page(__('eBay shipping', 'taxebay'), [], [['html' => $body]], Plugin::VERSION);
+    }
+
     /**
      * The shipping list in the modeller's shared list page (D-989): tabs by stage (D-985), search and filters, rows with
      * their buttons on the right and the details below.
@@ -71,13 +77,8 @@ final class ShippingScreen
         $this->resends = $resends;
         $this->lossLots = $lossLots;
 
-        if (! method_exists(ListPage::class, 'confirm')) {
-            return '<div class="wrap"><div class="notice notice-error inline"><p>'
-                . esc_html__('This page needs Taxonomy Modeller 0.1.175 or newer.', 'taxebay') . '</p></div></div>';
-        }
-
         $tab = in_array($tab, Stages::ALL, true) ? $tab : Stages::OPEN;
-        $html = '<div class="wrap">' . ListPage::heading(__('eBay shipping', 'taxebay'), Plugin::VERSION);
+        $html = '';
 
         foreach ($notices as $notice) {
             $html .= '<div class="notice ' . ($notice['ok'] ? 'notice-success' : 'notice-error') . ' inline"><p>' . esc_html($notice['text']) . '</p></div>';
@@ -89,7 +90,7 @@ final class ShippingScreen
         }
 
         if (is_string($open)) {
-            return $html . '<p>' . esc_html($open) . '</p></div>';
+            return self::framed($html . '<p>' . esc_html($open) . '</p>');
         }
 
         $byStage = array_fill_keys(Stages::ALL, []);
@@ -137,13 +138,13 @@ final class ShippingScreen
 
         $html .= self::refreshAll($shown, $tab, $carrier);
 
-        return $html . ListPage::table([
+        return self::framed($html . ListPage::table([
             self::column($list, 'date', __('Order', 'taxebay'), '12em'),
             self::column($list, 'buyer', __('Buyer', 'taxebay'), '13em'),
             [__('Items', 'taxebay')],
             self::column($list, 'total', __('Total', 'taxebay'), '7em'),
             [__('Tracking number', 'taxebay'), '12em'],
-        ], $rows) . self::dhlChoices($dhlLabels) . '</div>';
+        ], $rows) . self::dhlChoices($dhlLabels));
     }
 
     /** @return array{0: string, 1: string, 2: string, 3: string} a sortable column for ListPage::table() */
