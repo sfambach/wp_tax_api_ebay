@@ -1778,12 +1778,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/sfambach/wp-taxonomy-modeler.git",
-                "reference": "ee47d3a04f7925ea98d460ea1875119c22e5da81"
+                "reference": "f364bf6d8437382b0a722403f0e63df3c7c9b17a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/ee47d3a04f7925ea98d460ea1875119c22e5da81",
-                "reference": "ee47d3a04f7925ea98d460ea1875119c22e5da81",
+                "url": "https://api.github.com/repos/sfambach/wp-taxonomy-modeler/zipball/f364bf6d8437382b0a722403f0e63df3c7c9b17a",
+                "reference": "f364bf6d8437382b0a722403f0e63df3c7c9b17a",
                 "shasum": ""
             },
             "require": {
