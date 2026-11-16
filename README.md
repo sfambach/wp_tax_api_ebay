@@ -1,5 +1,7 @@
 # Taxmod API eBay
 
+> ⚠️ **Abgelöst / superseded (2026-11-16):** this repository is no longer used. Its code lives in [wp_tax_api_ebay](https://github.com/sfambach/wp_tax_api_ebay). Archived on the owner's decision.
+
 eBay connection for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modeler) (WordPress plugin).
 
 **Status: connect, test, and purchases delivered to the modeller's Inbox (D-950, D-953); sales are read but not delivered yet.** Decided as D-943, D-950; proposals and review move into the modeller (D-952). Secrets are always stored encrypted (D-951). The draft concept (German) lives with the modeller:
