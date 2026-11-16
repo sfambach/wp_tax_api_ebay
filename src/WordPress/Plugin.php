@@ -5,7 +5,7 @@ namespace TaxEbay\WordPress;
 use DateTimeImmutable;
 use SimpleXMLElement;
 use TaxEbay\Core\Mail\EbayMailParser;
-use Taxmod\Core\Import\Mail\OrderMailParser;
+use Taxmod\Core\Import\Mail\ShopMailParser;
 use Taxmod\Core\Exception\SecretDoesNotOpen;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\OAuth\AppKeys;
@@ -46,7 +46,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.76';
+    public const VERSION    = '0.0.77';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -63,6 +63,12 @@ final class Plugin
     {
         $plugin = new self();
 
+        // D-1409: the mail reader stands on the modeller's ShopMailParser; an older modeller gets no reader, and says so.
+        add_action('admin_notices', static function (): void {
+            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && ! class_exists(ShopMailParser::class)) {
+                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('reads its mails only with the Taxonomy Modeller 0.2.120 or later.', 'taxebay') . '</p></div>';
+            }
+        });
         add_action('admin_menu', $plugin->registerMenu(...), 20);
         add_filter('taxmod_config_tabs', $plugin->registerTab(...));
         add_filter('taxmod_import_sources', static fn (array $sources): array => [...$sources, new EbaySource()]);
@@ -138,7 +144,7 @@ final class Plugin
     {
         static $reader = null;
 
-        return $reader ??= interface_exists(OrderMailParser::class) ? new EbayMailParser(self::VERSION) : null;
+        return $reader ??= class_exists(ShopMailParser::class) ? new EbayMailParser(self::VERSION) : null;
     }
 
     /** Only for a modeller without the tabs of D-945: then the module keeps its own page. */

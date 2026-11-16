@@ -4,7 +4,7 @@ namespace TaxEbay\Core\Mail;
 
 use Taxmod\Core\Import\Mail\MailMessage;
 use Taxmod\Core\Import\Mail\LineCollector;
-use Taxmod\Core\Import\Mail\OrderMailParser;
+use Taxmod\Core\Import\Mail\ShopMailParser;
 use Taxmod\Core\Import\Mail\Text;
 use Taxmod\Core\Import\OrderProposal;
 use Taxmod\Core\Import\ProposalKind;
@@ -17,11 +17,8 @@ use Taxmod\Core\Import\ProposalKind;
  *
  * @see https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/import/module-schnitt.md
  */
-final class EbayMailParser implements OrderMailParser
+final class EbayMailParser extends ShopMailParser
 {
-    public function __construct(private readonly string $version)
-    {
-    }
 
     private const ITEM_LABELS = ['Preis:', 'Artikelnr.:', 'Lieferung ca.:'];
     private const ORDER_NUMBER = '/^\d{2}-\d{5}-\d{5}$/';
@@ -29,15 +26,11 @@ final class EbayMailParser implements OrderMailParser
         . 'günstiger|Kürzlich angesehen|Schlagen Sie|gehört fast|Konkurrenzgebot|Interesse|eingestellt|Erfahrung|'
         . 'Preisvorschlag gesendet|Ausverkauf|Festival|Passend zu|Boost|Newsletter/iu';
 
-    public function key(): string
-    {
-        return 'ebay';
-    }
-
     /** «Ebay», as the Python importer wrote it into the model — duplicates are found by this name. */
-    public function shopName(): string
+
+    public function __construct(string $version)
     {
-        return 'Ebay';
+        parent::__construct('ebay', 'Ebay', [ProposalKind::Ordered, ProposalKind::Sold, ProposalKind::Shipped, ProposalKind::Delivered, ProposalKind::Invoice, ProposalKind::Refunded], [], $version);
     }
 
     public function recognises(MailMessage $mail): bool
@@ -331,13 +324,4 @@ final class EbayMailParser implements OrderMailParser
             $items->lines(), null, Text::decimal($total), $seller, numberMissing: true);
     }
 
-    public function kinds(): array
-    {
-        return [ProposalKind::Ordered, ProposalKind::Sold, ProposalKind::Shipped, ProposalKind::Delivered, ProposalKind::Invoice, ProposalKind::Refunded];
-    }
-
-    public function version(): string
-    {
-        return $this->version;
-    }
 }
