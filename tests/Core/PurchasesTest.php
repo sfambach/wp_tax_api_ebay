@@ -6,7 +6,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpResponse;
+use Taxmod\Core\Http\HttpResponse;
 use TaxEbay\Core\Purchases\PurchaseFeed;
 use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;

@@ -42,7 +42,7 @@ final class EbaySource implements FetchingSource
     {
         $keys = Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay'));
         $connection = Settings::connection() ?? throw new EbayApiException(__('Not connected to eBay yet.', 'taxebay'));
-        $http = WpHttpTransport::budgeted();
+        $http = ApiTransport::budgeted();
         $token = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
 
         $now = new DateTimeImmutable('now');

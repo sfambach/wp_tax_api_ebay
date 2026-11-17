@@ -4,8 +4,8 @@ namespace TaxEbay\Core\OAuth;
 
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpTransport;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpTransport;
 
 /**
  * Asks eBay whose account the token belongs to — the connection test, and nothing else (D-943, step 1).

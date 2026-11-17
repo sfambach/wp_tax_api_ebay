@@ -7,8 +7,8 @@ use DateTimeZone;
 use SimpleXMLElement;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpTransport;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpTransport;
 
 /**
  * Reads his purchases through the Trading API (`GetOrders`, role «Buyer») — the only eBay interface that returns

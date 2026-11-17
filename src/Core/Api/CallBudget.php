@@ -2,6 +2,10 @@
 
 namespace TaxEbay\Core\Api;
 
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpResponse;
+use Taxmod\Core\Http\HttpTransport;
+
 /**
  * Counts every call per eBay API and refuses one before it would pass a daily cap — a bug, a loop or a busy button
  * must never run into eBay's call limits (his request 2026-10-21, with eBay's table of default limits).

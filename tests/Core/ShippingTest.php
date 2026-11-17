@@ -5,7 +5,7 @@ namespace TaxEbay\Tests\Core;
 use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpResponse;
+use Taxmod\Core\Http\HttpResponse;
 use TaxEbay\Core\Shipping\InsertText;
 use TaxEbay\Core\Shipping\DhlLabelLink;
 use TaxEbay\Core\Shipping\LabelMatch;

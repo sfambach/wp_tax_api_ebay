@@ -129,7 +129,7 @@ final class AccountDeletionEndpoint
         }
 
         $keys = Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay'));
-        $http = WpHttpTransport::budgeted();
+        $http = ApiTransport::budgeted();
         $token = (new TokenClient($keys, $http))->applicationToken(time())->accessToken;
         $key = (new PublicKeyClient($keys->environment, $http))->key($token, $keyId);
         set_transient(self::KEY_CACHE . $keyId, $key, DAY_IN_SECONDS);

@@ -187,7 +187,7 @@ final class Plugin
         set_transient(self::STATE . get_current_user_id(), $state, 15 * MINUTE_IN_SECONDS);
 
         // eBay's own host, which wp_safe_redirect would refuse.
-        wp_redirect((new TokenClient($keys, WpHttpTransport::budgeted()))->consentUrl($state));
+        wp_redirect((new TokenClient($keys, ApiTransport::budgeted()))->consentUrl($state));
         exit;
     }
 
@@ -216,7 +216,7 @@ final class Plugin
         }
 
         try {
-            $http = WpHttpTransport::budgeted();
+            $http = ApiTransport::budgeted();
             $tokens = (new TokenClient($keys, $http))->exchangeCode($code, time());
             $username = (new IdentityClient($keys->environment, $http))->username($tokens->accessToken);
             Settings::saveConnection(Settings::vault()->seal((string) $tokens->refreshToken), (int) $tokens->refreshExpiresAt, $username);
@@ -249,7 +249,7 @@ final class Plugin
         }
 
         try {
-            $http = WpHttpTransport::budgeted();
+            $http = ApiTransport::budgeted();
             $tokens = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time());
 
             /* translators: %s: eBay user name */
@@ -275,7 +275,7 @@ final class Plugin
         }
 
         try {
-            $http = WpHttpTransport::budgeted();
+            $http = ApiTransport::budgeted();
             $token = (new TokenClient($keys, $http))->refresh(Settings::vault()->open($connection['refresh']), time())->accessToken;
             $now = new DateTimeImmutable('now');
             $orders = (new PurchasesClient($keys->environment, $http))
@@ -1089,7 +1089,7 @@ final class Plugin
 
     private static function shippingClient(): ShippingClient
     {
-        return new ShippingClient((Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay')))->environment, WpHttpTransport::budgeted());
+        return new ShippingClient((Settings::appKeys() ?? throw new EbayApiException(__('The app keys are missing.', 'taxebay')))->environment, ApiTransport::budgeted());
     }
 
     private static function accessToken(): string
@@ -1109,7 +1109,7 @@ final class Plugin
             }
         }
 
-        $tokens = (new TokenClient($keys, WpHttpTransport::budgeted()))->refresh(Settings::vault()->open($connection['refresh']), time());
+        $tokens = (new TokenClient($keys, ApiTransport::budgeted()))->refresh(Settings::vault()->open($connection['refresh']), time());
         $lifetime = $tokens->accessExpiresAt - time() - 300;
 
         if ($lifetime > 0) {

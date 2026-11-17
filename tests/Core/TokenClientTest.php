@@ -5,7 +5,7 @@ namespace TaxEbay\Tests\Core;
 use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpResponse;
+use Taxmod\Core\Http\HttpResponse;
 use TaxEbay\Core\OAuth\AppKeys;
 use TaxEbay\Core\OAuth\IdentityClient;
 use TaxEbay\Core\OAuth\TokenClient;

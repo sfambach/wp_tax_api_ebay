@@ -4,8 +4,8 @@ namespace TaxEbay\Core\Shipping;
 
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpTransport;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpTransport;
 
 /**
  * The sales he has not shipped yet, and the call that tells eBay a parcel left (Sell Fulfillment API, D-976).

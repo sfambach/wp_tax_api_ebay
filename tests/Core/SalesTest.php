@@ -4,7 +4,7 @@ namespace TaxEbay\Tests\Core;
 
 use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpResponse;
+use Taxmod\Core\Http\HttpResponse;
 use DateTimeImmutable;
 use TaxEbay\Core\Sales\SaleFeed;
 use TaxEbay\Core\Sales\SaleMapper;

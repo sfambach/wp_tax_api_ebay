@@ -2,6 +2,8 @@
 
 namespace TaxEbay\Core\Api;
 
+use Taxmod\Core\Http\HttpResponse;
+
 use RuntimeException;
 
 /**

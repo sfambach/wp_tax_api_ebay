@@ -6,8 +6,8 @@ use PHPUnit\Framework\TestCase;
 use TaxEbay\Core\Api\CallBudget;
 use TaxEbay\Core\Api\CallLedger;
 use TaxEbay\Core\Api\EbayApiException;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpResponse;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpResponse;
 
 final class CallBudgetTest extends TestCase
 {

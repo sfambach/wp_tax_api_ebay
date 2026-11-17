@@ -4,8 +4,8 @@ namespace TaxEbay\Core\Sales;
 
 use TaxEbay\Core\Api\EbayApiException;
 use TaxEbay\Core\Api\Environment;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpTransport;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpTransport;
 
 /**
  * Reads his sales from the Sell Fulfillment API: orders changed since a point in time, page by page, and for each

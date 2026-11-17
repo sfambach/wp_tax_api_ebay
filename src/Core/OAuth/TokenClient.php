@@ -3,8 +3,8 @@
 namespace TaxEbay\Core\OAuth;
 
 use TaxEbay\Core\Api\EbayApiException;
-use TaxEbay\Core\Api\HttpRequest;
-use TaxEbay\Core\Api\HttpTransport;
+use Taxmod\Core\Http\HttpRequest;
+use Taxmod\Core\Http\HttpTransport;
 
 /**
  * The OAuth authorization-code flow against eBay: the consent link, code for tokens, refresh for a new access token.
