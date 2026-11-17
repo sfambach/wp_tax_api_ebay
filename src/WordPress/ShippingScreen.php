@@ -244,7 +244,7 @@ final class ShippingScreen
                 . self::disputeNotes($disputes),
             esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
             implode('<br>', $items),
-            esc_html(number_format(ParcelList::total($parcel), 2, ',', '.') . ' ' . $first->currency),
+            esc_html(number_format_i18n(ParcelList::total($parcel), 2) . ' ' . $first->currency),
             ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
                 . $this->resendNote($ids)
                 . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>' . esc_html(self::carrierName($carrier) . ': ' . self::carrierWord($carrier)) . '</small>')
