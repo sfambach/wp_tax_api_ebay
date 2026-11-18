@@ -79,7 +79,18 @@ final class Plugin
             }
         });
         add_action('admin_menu', $plugin->registerMenu(...), 20);
-        add_action(self::REFRESH_HOOK, static fn () => (new self())->runRefresh());
+        add_action(self::REFRESH_HOOK, static function (): void {
+            $plugin = new self();
+
+            // D-1254 without a page: the cause goes to the log, the message to the next view of the one who clicked.
+            try {
+                $plugin->runRefresh();
+            } catch (\Throwable $failure) {
+                error_log('taxebay refresh: ' . $failure::class . ': ' . $failure->getMessage() . ' @ ' . $failure->getFile() . ':' . $failure->getLine());
+                /* translators: %s: the error message */
+                $plugin->notice(false, sprintf(__('The action failed: %s', 'taxebay'), $failure->getMessage()));
+            }
+        });
         add_action(self::LABELS_HOOK, self::fetchLabels(...));
         add_filter('taxmod_config_tabs', $plugin->registerTab(...));
         add_filter('taxmod_import_sources', static fn (array $sources): array => [...$sources, new EbaySource()]);
@@ -1070,7 +1081,7 @@ final class Plugin
             wp_schedule_single_event(time(), self::REFRESH_HOOK);
         }
 
-        $this->notice(true, __('The tracking status is refreshed in the background; reload the page in a minute.', 'taxebay'));
+        $this->notice(true, __('Refresh is queued and runs in the background; the result shows here on the next page view.', 'taxebay'));
 
         $open = isset($_GET[ShippingScreen::OPEN_HISTORY]) ? sanitize_text_field(wp_unslash($_GET[ShippingScreen::OPEN_HISTORY])) : '';
         $back = remove_query_arg(ShippingScreen::OPEN_HISTORY, wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
@@ -1125,6 +1136,16 @@ final class Plugin
         }
 
         $this->refreshDisputes($asked);
+
+        $answered = count($parcels) - count($failed);
+
+        if ($answered > 0) {
+            $this->notice(true, sprintf(
+                /* translators: %d: number of parcels */
+                _n('Tracking status refreshed for %d parcel.', 'Tracking status refreshed for %d parcels.', $answered, 'taxebay'),
+                $answered
+            ));
+        }
 
         // No answer keeps the last one; say so instead of leaving him to wonder (2026-10-27).
         if ($failed !== []) {
