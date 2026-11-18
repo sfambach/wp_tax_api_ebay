@@ -31,7 +31,6 @@ use Taxmod\WordPress\Admin\ListPage;
  */
 final class Plugin
 {
-    private const LABEL_FETCHES_PER_VIEW = 5;
 
     /** tax_mail keeps a DHL label 30 days, or 14 after it was printed; the label text cached here goes with it. */
     private const LABEL_KEEP_DAYS = 30;
@@ -46,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.80';
+    public const VERSION    = '0.0.81';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -59,6 +58,16 @@ final class Plugin
     /** D-1258: the stage counts of the last shipping page, so the Warenausgang's overview never calls eBay. */
     private const STAGE_COUNTS = 'taxebay_stage_counts';
 
+    // D-1435 (3): eBay's list of open sales, kept briefly so a view and the action after it ask eBay once.
+    private const OPEN_LIST = 'taxebay_open_list';
+    private const OPEN_LIST_SECONDS = 90;
+
+    // D-1435 (2), (3): the work that waits on DHL, GLS or eBay runs in WP-Cron, never in a page view.
+    private const REFRESH_HOOK = 'taxebay_refresh_tracking';
+    private const REFRESH_QUEUE = 'taxebay_refresh_queue';
+    private const LABELS_HOOK = 'taxebay_fetch_labels';
+    private const LABEL_FETCHES_PER_RUN = 10;
+
     public static function boot(): void
     {
         $plugin = new self();
@@ -70,6 +79,8 @@ final class Plugin
             }
         });
         add_action('admin_menu', $plugin->registerMenu(...), 20);
+        add_action(self::REFRESH_HOOK, static fn () => (new self())->runRefresh());
+        add_action(self::LABELS_HOOK, self::fetchLabels(...));
         add_filter('taxmod_config_tabs', $plugin->registerTab(...));
         add_filter('taxmod_import_sources', static fn (array $sources): array => [...$sources, new EbaySource()]);
         // ⚠️ *D-1006: the eBay mails are read here, not in Taxmod Mail, which only fetches them (needs modeller 0.1.81).*
@@ -443,6 +454,8 @@ final class Plugin
             $token = self::accessToken();
             $client = self::shippingClient();
 
+            self::forgetOpenList();
+
             foreach ($sales as $sale) {
                 $client->markShipped($token, $sale->orderId, $sale->items, $carrier, $tracking, gmdate('Y-m-d\TH:i:s.000\Z'));
                 Settings::saveStage([$sale->orderId], Stages::SHIPPED, time());
@@ -762,7 +775,7 @@ final class Plugin
         }
 
         $byOrder = [];
-        $fetched = 0;
+        $missing = [];
 
         foreach ($labels as $label) {
             $keep = $label['printed_at'] === null ? self::LABEL_KEEP_DAYS * DAY_IN_SECONDS : $label['printed_at'] + self::LABEL_KEEP_AFTER_PRINT_DAYS * DAY_IN_SECONDS - time();
@@ -778,14 +791,9 @@ final class Plugin
                 $lines = get_transient($key);
 
                 if (! is_array($lines)) {
-                    // A slow page beats a stuck one: at most a few new PDFs per view, the rest next time.
-                    if (++$fetched > self::LABEL_FETCHES_PER_VIEW) {
-                        continue;
-                    }
-
-                    $pdf = self::labelPdf($link);
-                    $lines = $pdf === null ? [] : LabelText::of($pdf);
-                    set_transient($key, $lines, $pdf === null ? min(HOUR_IN_SECONDS, $keep) : $keep);
+                    // D-1435: the PDF is fetched in the background; the label matches from the next view on.
+                    $missing[$link] = $keep;
+                    continue;
                 }
 
                 foreach ($parcels as $parcel) {
@@ -798,7 +806,42 @@ final class Plugin
             }
         }
 
+        if ($missing !== [] && wp_next_scheduled(self::LABELS_HOOK) === false) {
+            wp_schedule_single_event(time(), self::LABELS_HOOK, [$missing]);
+        }
+
         return $byOrder;
+    }
+
+    /**
+     * WP-Cron (D-1435): reads the label PDFs the page found missing, LABEL_FETCHES_PER_RUN at a time, the rest in the next run.
+     *
+     * @param mixed $missing link → seconds to keep the text; `mixed`: what WP-Cron hands back
+     */
+    public static function fetchLabels(mixed $missing): void
+    {
+        $missing = is_array($missing) ? $missing : [];
+        $fetched = 0;
+
+        foreach ($missing as $link => $keep) {
+            if (! is_string($link) || ! DhlLabelLink::accepts($link) || is_array(get_transient(self::labelKey($link)))) {
+                unset($missing[$link]);
+                continue;
+            }
+
+            if (++$fetched > self::LABEL_FETCHES_PER_RUN) {
+                break;
+            }
+
+            $pdf = self::labelPdf($link);
+            $keep = max(1, (int) $keep);
+            set_transient(self::labelKey($link), $pdf === null ? [] : LabelText::of($pdf), $pdf === null ? min(HOUR_IN_SECONDS, $keep) : $keep);
+            unset($missing[$link]);
+        }
+
+        if ($missing !== []) {
+            wp_schedule_single_event(time() + MINUTE_IN_SECONDS, self::LABELS_HOOK, [$missing]);
+        }
     }
 
     public function handleInsert(): void
@@ -836,7 +879,34 @@ final class Plugin
      */
     private static function openSales(array $orderIds): array
     {
-        return array_values(array_filter(self::shippingClient()->open(self::accessToken(), self::labelledSince(), array_keys(Settings::resends())), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
+        return array_values(array_filter(self::openList(), static fn (OpenShipment $sale): bool => in_array($sale->orderId, $orderIds, true)));
+    }
+
+    /**
+     * eBay's open sales, kept OPEN_LIST_SECONDS (D-1435): the page and the click after it ask eBay once. A change of the
+     * resends asks anew, and so does every act that changes eBay's side.
+     *
+     * @return list<OpenShipment>
+     */
+    private static function openList(?string $token = null): array
+    {
+        $resends = array_keys(Settings::resends());
+        $for = md5(implode(',', $resends));
+        $kept = get_transient(self::OPEN_LIST);
+
+        if (is_array($kept) && ($kept['for'] ?? '') === $for && is_array($kept['sales'] ?? null)) {
+            return array_values(array_filter($kept['sales'], static fn (mixed $sale): bool => $sale instanceof OpenShipment));
+        }
+
+        $sales = self::shippingClient()->open($token ?? self::accessToken(), self::labelledSince(), $resends);
+        set_transient(self::OPEN_LIST, ['for' => $for, 'sales' => $sales], self::OPEN_LIST_SECONDS);
+
+        return $sales;
+    }
+
+    private static function forgetOpenList(): void
+    {
+        delete_transient(self::OPEN_LIST);
     }
 
     /**
@@ -857,8 +927,8 @@ final class Plugin
 
     /**
      * What a carrier module says about a tracking number, with `carrier` set to the one that knows it: DHL first, GLS
-     * when DHL has nothing (D-1132). A refresh asks only GLS for a number GLS already knows, so DHL's daily calls are
-     * not spent on it. Without the GLS module, GLS's filter answers null and this is DHL alone.
+     * when DHL has nothing (D-1132). A refresh asks only the carrier that already knows the number (D-1435), so no daily
+     * calls are spent on the other. Without the GLS module, GLS's filter answers null and this is DHL alone.
      *
      * @return array<string, mixed>|null `mixed`: the carrier module's array
      */
@@ -868,6 +938,13 @@ final class Plugin
 
         if ($refresh && $stored !== null && ($stored['known'] ?? true) !== false) {
             return self::carrierAnswer('taxmod_gls_tracking', $number, true, 'GLS');
+        }
+
+        // D-1435: the carrier that knows the number is its stored answer; a number DHL knows never costs a GLS call.
+        $storedDhl = $refresh ? self::carrierAnswer('taxmod_dhl_tracking', $number, false, 'DHL') : null;
+
+        if ($storedDhl !== null && ($storedDhl['known'] ?? true) !== false) {
+            return self::carrierAnswer('taxmod_dhl_tracking', $number, true, 'DHL') ?? $storedDhl;
         }
 
         $dhl = self::carrierAnswer('taxmod_dhl_tracking', $number, $refresh, 'DHL');
@@ -944,7 +1021,7 @@ final class Plugin
             $noted = Settings::disputes();
             $found = [];
 
-            foreach (Parcels::of($client->open($token, self::labelledSince(), array_keys(Settings::resends()))) as $parcel) {
+            foreach (Parcels::of(self::openList($token)) as $parcel) {
                 if (Stages::of($parcel, $stages, time()) !== Stages::SHIPPED) {
                     continue;
                 }
@@ -969,36 +1046,71 @@ final class Plugin
     }
 
     /**
-     * Asks DHL anew for the given parcels and moves them on: a scan takes «packed» to «shipped», delivery takes «shipped»
-     * to «received» — only those two stages ask DHL (his rule, 2026-10-27).
+     * «Refresh» (D-1435): the parcels go into a queue that WP-Cron works off, so the page does not wait on DHL's five
+     * seconds per call. Only «packed» and «shipped» ask the carrier (his rule, 2026-10-27).
      */
     public function handleDhlRefresh(): void
     {
         $this->guard(ShippingScreen::DHL_REFRESH);
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
-        $stages = Settings::stages();
         $list = isset($_GET['parcels']) ? sanitize_text_field(wp_unslash($_GET['parcels'])) : '';
-        $failed = [];
-
-        $asked = [];
+        $queue = get_option(self::REFRESH_QUEUE, []);
+        $queue = is_array($queue) ? $queue : [];
+        $parcels = is_array($queue['parcels'] ?? null) ? $queue['parcels'] : [];
 
         foreach (array_slice(explode(';', $list), 0, ShippingScreen::REFRESH_AT_ONCE) as $parcel) {
-            if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) !== 1) {
-                continue;
+            if (preg_match('/^([0-9A-Za-z-]+(?:,[0-9A-Za-z-]+)*):([0-9A-Za-z]{6,40})$/', $parcel, $parts) === 1) {
+                $parcels[$parts[2]] = ['orders' => explode(',', $parts[1]), 'tab' => $tab];
             }
+        }
 
-            array_push($asked, ...explode(',', $parts[1]));
+        update_option(self::REFRESH_QUEUE, ['user' => get_current_user_id(), 'parcels' => $parcels], false);
 
-            $word = self::tracking($parts[2], true);
+        if ($parcels !== [] && wp_next_scheduled(self::REFRESH_HOOK) === false) {
+            wp_schedule_single_event(time(), self::REFRESH_HOOK);
+        }
+
+        $this->notice(true, __('The tracking status is refreshed in the background; reload the page in a minute.', 'taxebay'));
+
+        $open = isset($_GET[ShippingScreen::OPEN_HISTORY]) ? sanitize_text_field(wp_unslash($_GET[ShippingScreen::OPEN_HISTORY])) : '';
+        $back = remove_query_arg(ShippingScreen::OPEN_HISTORY, wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
+        wp_safe_redirect($open === '' ? $back : add_query_arg(ShippingScreen::OPEN_HISTORY, rawurlencode($open), $back));
+        exit;
+    }
+
+    /**
+     * WP-Cron (D-1435): asks the carriers for the queued parcels and moves them on — a scan takes «packed» to «shipped»,
+     * delivery takes «shipped» to «received». Answers that still hold are not asked again (the carrier modules decide).
+     * The messages go to the person who clicked.
+     */
+    public function runRefresh(): void
+    {
+        $queue = get_option(self::REFRESH_QUEUE, []);
+        delete_option(self::REFRESH_QUEUE);
+        $parcels = is_array($queue) && is_array($queue['parcels'] ?? null) ? $queue['parcels'] : [];
+
+        if ($parcels === []) {
+            return;
+        }
+
+        wp_set_current_user((int) ($queue['user'] ?? 0));
+        $stages = Settings::stages();
+        $failed = [];
+        $asked = [];
+
+        foreach ($parcels as $number => $parcel) {
+            $orders = array_values(array_filter(array_map('strval', (array) ($parcel['orders'] ?? []))));
+            array_push($asked, ...$orders);
+            $word = self::tracking((string) $number, true);
 
             if (! is_array($word) || ! isset($word['stage'])) {
-                $failed[] = $parts[2];
+                $failed[] = (string) $number;
 
                 continue;
             }
 
-            foreach (explode(',', $parts[1]) as $orderId) {
-                $current = $stages[$orderId]['stage'] ?? $tab;
+            foreach ($orders as $orderId) {
+                $current = $stages[$orderId]['stage'] ?? (string) ($parcel['tab'] ?? '');
 
                 if (! in_array($current, [Stages::PACKED, Stages::SHIPPED], true)) {
                     continue;
@@ -1022,11 +1134,6 @@ final class Plugin
                 implode(', ', $failed)
             ));
         }
-
-        $open = isset($_GET[ShippingScreen::OPEN_HISTORY]) ? sanitize_text_field(wp_unslash($_GET[ShippingScreen::OPEN_HISTORY])) : '';
-        $back = remove_query_arg(ShippingScreen::OPEN_HISTORY, wp_get_referer() ?: admin_url('admin.php?page=' . ShippingScreen::PAGE));
-        wp_safe_redirect($open === '' ? $back : add_query_arg(ShippingScreen::OPEN_HISTORY, rawurlencode($open), $back));
-        exit;
     }
 
     /** Orders eBay counts as shipped stay readable as long as his stage notes last (D-985). */
@@ -1047,7 +1154,7 @@ final class Plugin
     {
         $client = self::shippingClient();
         $resends = Settings::resends();
-        $open = $client->open($token, self::labelledSince(), array_keys($resends));
+        $open = self::openList();
         $shown = [];
         $inTab = array_values(array_filter(Parcels::of($open), static fn (array $parcel): bool => Stages::of($parcel, $stages, time()) === $tab));
 
@@ -1159,6 +1266,7 @@ final class Plugin
     {
         $this->guard('taxebay_disconnect');
         Settings::forget();
+        self::forgetOpenList();
         $this->notice(true, __('Disconnected. To revoke the consent at eBay as well, remove the app in your eBay account settings.', 'taxebay'));
         $this->back();
     }
