@@ -262,7 +262,8 @@ final class ShippingScreen
             $buttons .= '<a class="button taxmod-square" target="_blank" href="' . esc_url(self::insertUrl($orders)) . '" title="' . esc_attr__('Print insert', 'taxebay') . '" aria-label="' . esc_attr__('Print insert', 'taxebay') . '">' . self::icon('media-text') . '</a> ';
         }
 
-        if ($early && $labelled) {
+        // D-1507: the 62 mm print is the Etiketten module's; without it the button is left out.
+        if ($early && $labelled && wp_script_is(Plugin::LABEL62, 'registered')) {
             $buttons .= '<button type="button" class="button taxmod-square" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '" data-taxebay-input="' . esc_attr($key . '-label') . '" title="' . esc_attr__('Print label 62 mm', 'taxebay') . '" aria-label="' . esc_attr__('Print label 62 mm', 'taxebay') . '">' . self::icon('printer') . '</button> ';
         }
 

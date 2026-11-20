@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.84';
+    public const VERSION    = '0.0.85';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -393,18 +393,19 @@ final class Plugin
         return ListPage::steps($steps, '', static fn (string $stage): string => admin_url('admin.php?page=' . ShippingScreen::PAGE . '&tab=' . $stage));
     }
 
-    /** pdf.js ships with the plugin, so the label PDF is read in the browser and never uploaded. */
+    /** The Etiketten module's script for 62 mm postage, attached by its handle only (D-1507). */
+    public const LABEL62 = 'taxmod-label62';
+
+    /** D-1507: the label PDF is read in the browser by the Etiketten module's script and never uploaded; without that module there is no button. */
     private static function enqueueLabelPrint(): void
     {
+        if (! wp_script_is(self::LABEL62, 'registered')) {
+            return;
+        }
+
         $main = dirname(__DIR__, 2) . '/wp-tax-api-ebay.php';
-        wp_enqueue_script('taxebay-pdfjs', plugins_url('assets/pdfjs/pdf.min.js', $main), [], '3.11.174', true);
-        wp_enqueue_script('taxebay-label62', plugins_url('assets/label62.js', $main), ['taxebay-pdfjs'], self::VERSION, true);
-        wp_localize_script('taxebay-label62', 'taxebayLabel', [
-            'worker' => plugins_url('assets/pdfjs/pdf.worker.min.js', $main),
-            // eBay's label PDF uses fonts it does not embed; without these pdf.js leaves that text out.
-            'cmaps'  => plugins_url('assets/pdfjs/cmaps/', $main),
-            'fonts'  => plugins_url('assets/pdfjs/standard_fonts/', $main),
-            'empty'  => __('The PDF has no printed content.', 'taxebay'),
+        wp_enqueue_script('taxebay-label-link', plugins_url('assets/label-link.js', $main), [self::LABEL62], self::VERSION, true);
+        wp_localize_script('taxebay-label-link', 'taxebayLabel', [
             'failed' => __('The label could not be read:', 'taxebay'),
             'noLink'  => __('Paste the «print label» link from DHL\'s mail first.', 'taxebay'),
             // Not wp_nonce_url(): that escapes & for HTML, and this goes to a script.
