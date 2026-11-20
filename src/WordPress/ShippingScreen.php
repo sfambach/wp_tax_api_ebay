@@ -112,8 +112,8 @@ final class ShippingScreen
         }
 
         $shown = $list->apply($byStage[$tab]);
+        // D-1462/D-1500: search, filters and «refresh» stand in the list's one bar.
         $html .= ListPage::tabs($tabs, $tab, static fn (string $stage): string => self::url($list, ['tab' => $stage]))
-            . ListPage::searchBox(self::SEARCH_FORM, $list->search, __('Order, buyer, item, tracking…', 'taxebay'), array_filter(['page' => self::PAGE, 'tab' => $tab, 'orderby' => $list->orderBy === 'date' ? '' : $list->orderBy, 'order' => $list->descending ? 'desc' : '']), __('Search parcels', 'taxebay'))
             . ListPage::bulkBar(
                 self::BULK_FORM,
                 self::STAGE,
@@ -123,7 +123,8 @@ final class ShippingScreen
                 ListPage::filters(self::SEARCH_FORM, [
                     ['label', ['' => __('All labels', 'taxebay'), ParcelList::LABEL_EBAY => __('eBay label', 'taxebay'), ParcelList::LABEL_OWN => __('Own label', 'taxebay')], $list->label, __('Label', 'taxebay')],
                     ['paid', ['' => __('Paid and unpaid', 'taxebay'), ParcelList::PAID => __('Paid', 'taxebay'), ParcelList::UNPAID => __('Not paid yet', 'taxebay')], $list->paid, __('Payment', 'taxebay')],
-                ])
+                ]) . self::refreshAll($shown, $tab, $carrier),
+                search: ListPage::searchBox(self::SEARCH_FORM, $list->search, __('Order, buyer, item, tracking…', 'taxebay'), array_filter(['page' => self::PAGE, 'tab' => $tab, 'orderby' => $list->orderBy === 'date' ? '' : $list->orderBy, 'order' => $list->descending ? 'desc' : '']), __('Search parcels', 'taxebay'))
             );
 
         $rows = '';
@@ -135,8 +136,6 @@ final class ShippingScreen
         if ($rows === '') {
             $rows = '<tr class="no-items"><td class="colspanchange" colspan="7">' . esc_html__('Nothing here.', 'taxebay') . '</td></tr>';
         }
-
-        $html .= self::refreshAll($shown, $tab, $carrier);
 
         return self::framed($html . ListPage::table([
             self::column($list, 'date', __('Order', 'taxebay'), '12em'),
@@ -168,7 +167,7 @@ final class ShippingScreen
             $at = strtotime($label['date']);
 
             foreach ($label['links'] as $number => $link) {
-                $options .= '<option value="' . esc_attr($link) . '" label="' . esc_attr(trim($label['cart'] . ' · ' . ($at === false ? '' : wp_date('d.m. H:i', $at)) . (count($label['links']) > 1 ? ' #' . ($number + 1) : ''), ' ·')) . '"></option>';
+                $options .= '<option value="' . esc_attr($link) . '" label="' . esc_attr(trim($label['cart'] . ' · ' . ($at === false ? '' : ListPage::date($at, true)) . (count($label['links']) > 1 ? ' #' . ($number + 1) : ''), ' ·')) . '"></option>';
             }
         }
 
@@ -244,25 +243,25 @@ final class ShippingScreen
                 . self::disputeNotes($disputes),
             esc_html($first->buyer) . ($place === '' ? '' : '<br><small>' . esc_html($place) . '</small>'),
             implode('<br>', $items),
-            esc_html(number_format_i18n(ParcelList::total($parcel), 2) . ' ' . $first->currency),
+            esc_html(ListPage::money(ParcelList::total($parcel), $first->currency)),
             ($tracking === '' ? '—' : self::trackingHistory($tracking, $carrier, $ids, $stage)) . '<br><small>' . esc_html($labelled ? __('eBay label', 'taxebay') : __('Own label', 'taxebay')) . '</small>'
                 . $this->resendNote($ids)
                 . ($carrier === null ? '' : (self::hasEvents($carrier) ? '' : '<br><small' . (($carrier['stage'] ?? '') === 'problem' ? ' style="color:#d63638"' : '') . '>' . esc_html(self::carrierName($carrier) . ': ' . self::carrierWord($carrier)) . '</small>')
                     . (isset($carrier['checked_at']) && is_numeric($carrier['checked_at']) ? '<br><small style="color:#646970">' . esc_html(sprintf(
                         /* translators: %s: date and time */
                         __('as of %s', 'taxebay'),
-                        wp_date('d.m. H:i', (int) $carrier['checked_at'])
+                        ListPage::date((int) $carrier['checked_at'], true)
                     )) . '</small>' : '')),
         ];
 
         $buttons = '';
 
         if ($early) {
-            $buttons .= '<a class="button button-small" target="_blank" href="' . esc_url(self::insertUrl($orders)) . '" title="' . esc_attr__('Print insert', 'taxebay') . '" aria-label="' . esc_attr__('Print insert', 'taxebay') . '">' . self::icon('media-text') . '</a> ';
+            $buttons .= '<a class="button taxmod-square" target="_blank" href="' . esc_url(self::insertUrl($orders)) . '" title="' . esc_attr__('Print insert', 'taxebay') . '" aria-label="' . esc_attr__('Print insert', 'taxebay') . '">' . self::icon('media-text') . '</a> ';
         }
 
         if ($early && $labelled) {
-            $buttons .= '<button type="button" class="button button-small" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '" data-taxebay-input="' . esc_attr($key . '-label') . '" title="' . esc_attr__('Print label 62 mm', 'taxebay') . '" aria-label="' . esc_attr__('Print label 62 mm', 'taxebay') . '">' . self::icon('printer') . '</button> ';
+            $buttons .= '<button type="button" class="button taxmod-square" data-taxebay-link="' . esc_attr(self::reference($ids, $seller)) . '" data-taxebay-input="' . esc_attr($key . '-label') . '" title="' . esc_attr__('Print label 62 mm', 'taxebay') . '" aria-label="' . esc_attr__('Print label 62 mm', 'taxebay') . '">' . self::icon('printer') . '</button> ';
         }
 
         $back = Stages::previous($stage);
@@ -475,7 +474,7 @@ final class ShippingScreen
         $undo = '<p>' . esc_html(sprintf(
             /* translators: %s: date */
             __('Takes back the resend of %s:', 'taxebay'),
-            wp_date('d.m.Y H:i', (int) ($latest['at'] ?? 0))
+            ListPage::date((int) ($latest['at'] ?? 0), true)
         )) . '</p><ul style="list-style:disc;margin-left:1.5em">'
             . ((int) ($latest['deal'] ?? 0) > 0 ? '<li>' . esc_html__('the loss booking is cancelled (Storno), the goods are in stock again', 'taxebay') . '</li>' : '')
             . ((string) ($latest['tracking'] ?? '') !== '' ? '<li>' . esc_html__('the new tracking number is taken off the sale', 'taxebay') . '</li>' : '')
@@ -515,7 +514,7 @@ final class ShippingScreen
         $text = trim((string) ($event['description'] ?? '')) ?: (string) ($event['status'] ?? '');
         $place = trim((string) ($event['place'] ?? ''));
 
-        return '<small>' . esc_html($time === false ? $when : wp_date('d.m. H:i', $time)) . '</small> ' . esc_html($text)
+        return '<small>' . esc_html($time === false ? $when : ListPage::date($time, true)) . '</small> ' . esc_html($text)
             . ($place === '' ? '' : ' <small>· ' . esc_html($place) . '</small>');
     }
 
@@ -580,8 +579,7 @@ final class ShippingScreen
 
         $arguments = array_slice($arguments, 0, self::REFRESH_AT_ONCE);
 
-        return '<p style="text-align:right;margin:0 0 8px"><a class="button" href="' . esc_url(self::refreshUrl($arguments, $tab, '')) . '">'
-            . esc_html__('Refresh tracking and eBay', 'taxebay') . '</a></p>';
+        return '<div class="alignleft actions">' . ListPage::iconButton('update', __('Refresh tracking and eBay', 'taxebay'), self::refreshUrl($arguments, $tab, '')) . '</div>';
     }
 
     /** @param list<string> $ids */
