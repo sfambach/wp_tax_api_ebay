@@ -2,6 +2,8 @@
 
 namespace TaxEbay\WordPress;
 
+use Taxmod\Core\Description\InputKind;
+use Taxmod\WordPress\Draw\SelectMarkup;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Taxmod\WordPress\Admin\ListPage;
@@ -313,7 +315,7 @@ final class ShippingScreen
             $tools .= '<form method="get" action="' . esc_url(admin_url('admin-post.php')) . '" target="_blank" style="margin-bottom:8px">'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::INSERT) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
                 . wp_nonce_field(self::INSERT, '_wpnonce', false, false)
-                . '<input type="url" name="github" style="width:22em;max-width:100%" placeholder="' . esc_attr__('GitHub project (optional)', 'taxebay') . '"> '
+                . ListPage::field(InputKind::Line, 'github', '', ['inputMode' => 'url', 'size' => 30, 'placeholder' => __('GitHub project (optional)', 'taxebay')]) . ' '
                 . get_submit_button(__('Print insert with project', 'taxebay'), 'small', 'print', false) . '</form>';
         }
 
@@ -324,20 +326,14 @@ final class ShippingScreen
         }
 
         if ($early && ! $labelled) {
-            $carriers = '';
-
-            foreach (ShippingClient::CARRIERS as $code => $label) {
-                $carriers .= '<option value="' . esc_attr($code) . '">' . esc_html($label) . '</option>';
-            }
-
             $tools .= '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"' . ListPage::confirm(
                 /* translators: %s: eBay order numbers */
                 sprintf(__('Report %s as shipped to eBay? The buyer is notified.', 'taxebay'), implode(', ', $ids))
             ) . '>'
                 . '<input type="hidden" name="action" value="' . esc_attr(self::SHIP) . '"><input type="hidden" name="orders" value="' . esc_attr($orders) . '">'
                 . wp_nonce_field(self::SHIP, '_wpnonce', true, false)
-                . '<select name="carrier" aria-label="' . esc_attr__('Carrier', 'taxebay') . '">' . $carriers . '</select> '
-                . '<input type="text" name="tracking" style="width:14em" required placeholder="' . esc_attr__('Tracking number', 'taxebay') . '"> '
+                . SelectMarkup::of('carrier', ShippingClient::CARRIERS, null, false, attributes: ['aria-label' => __('Carrier', 'taxebay')]) . ' '
+                . ListPage::field(InputKind::Line, 'tracking', '', ['required' => true, 'size' => 20, 'placeholder' => __('Tracking number', 'taxebay')]) . ' '
                 . get_submit_button(__('Mark shipped', 'taxebay'), 'primary small', 'submit', false, $paid ? null : ['disabled' => 'disabled']) . '</form>';
         }
 
@@ -434,28 +430,19 @@ final class ShippingScreen
         $latest = Resends::latest($this->resends, $ids);
 
         if (in_array($stage, Resends::FROM, true)) {
-            $reasons = '';
-
-            foreach (self::reasonNames() as $code => $name) {
-                $reasons .= '<option value="' . esc_attr($code) . '">' . esc_html($name) . '</option>';
-            }
-
             $pieces = array_sum(array_map(static fn (OpenShipment $sale): int => array_sum(array_map(static fn (array $item): int => $item['quantity'], $sale->items)), $parcel));
-            $body = '<p><label>' . esc_html__('Reason', 'taxebay') . '<br><select name="reason">' . $reasons . '</select></label></p>'
-                . '<p><label>' . esc_html__('Tracking number of the new parcel (optional, can follow)', 'taxebay') . '<br><input type="text" name="tracking" style="width:18em"></label></p>';
+            $body = '<p><label>' . esc_html__('Reason', 'taxebay') . '<br>' . SelectMarkup::of('reason', self::reasonNames(), null, false) . '</label></p>'
+                . '<p><label>' . esc_html__('Tracking number of the new parcel (optional, can follow)', 'taxebay') . '<br>' . ListPage::field(InputKind::Line, 'tracking', '', ['size' => 24]) . '</label></p>';
 
             if ($this->lossLots !== null) {
-                $lots = '<option value="0">' . esc_html__('— no stock booking —', 'taxebay') . '</option>';
+                $lots = ['0' => __('— no stock booking —', 'taxebay')] + $this->lossLots;
 
-                foreach ($this->lossLots as $lot => $name) {
-                    $lots .= '<option value="' . esc_attr((string) $lot) . '">' . esc_html($name) . '</option>';
-                }
-
-                $body .= '<p><label>' . esc_html__('Goods sent again, taken from', 'taxebay') . '<br><select name="lot" style="max-width:28em">' . $lots . '</select></label></p>'
-                    . '<p><label>' . esc_html__('Quantity', 'taxebay') . ' <input type="text" inputmode="decimal" name="quantity" value="' . esc_attr((string) max(1, $pieces)) . '" style="width:5em"></label></p>';
+                $body .= '<p><label>' . esc_html__('Goods sent again, taken from', 'taxebay') . '<br>' . SelectMarkup::of('lot', $lots, '0', false, attributes: ['style' => 'max-width:28em']) . '</label></p>'
+                    // D-1501: the quantity with its unit; the pieces of the sale, as before.
+                    . '<p><label>' . esc_html__('Quantity', 'taxebay') . ' ' . ListPage::quantity('quantity', __('pcs', 'taxebay'), (string) max(1, $pieces)) . '</label></p>';
             }
 
-            $body .= '<p><label>' . esc_html__('Note (optional)', 'taxebay') . '<br><input type="text" name="note" style="width:24em;max-width:100%"></label></p>'
+            $body .= '<p><label>' . esc_html__('Note (optional)', 'taxebay') . '<br>' . ListPage::field(InputKind::Line, 'note', '', ['size' => 32]) . '</label></p>'
                 . '<p class="description">' . esc_html__('The parcel goes back to «Open» for a new insert and label. The goods sent again leave stock as a loss (consumption naming the sale). The first tracking number stays on record. eBay is not told — add the new number there by hand.', 'taxebay') . '</p>';
 
             $html .= self::resendForm(self::RESEND, $orders, ListPage::dialogAction($key . '-resend', __('Send again', 'taxebay'), __('Send this parcel again', 'taxebay'), $body, 'go', '1', __('Send again', 'taxebay')));
@@ -466,7 +453,7 @@ final class ShippingScreen
         }
 
         if ((string) ($latest['tracking'] ?? '') === '') {
-            $field = '<p><label>' . esc_html__('Tracking number of the new parcel', 'taxebay') . '<br><input type="text" name="tracking" required style="width:18em"></label></p>'
+            $field = '<p><label>' . esc_html__('Tracking number of the new parcel', 'taxebay') . '<br>' . ListPage::field(InputKind::Line, 'tracking', '', ['required' => true, 'size' => 24]) . '</label></p>'
                 . '<p class="description">' . esc_html__('Kept with the sale next to the first number and asked of the carrier from now on; eBay is not told.', 'taxebay') . '</p>';
             $html .= self::resendForm(self::RESEND_TRACKING, $orders, ListPage::dialogAction($key . '-resend-tracking', __('Add tracking number', 'taxebay'), __('Tracking number of the new parcel', 'taxebay'), $field, 'go', '1', __('Add', 'taxebay')));
         }
