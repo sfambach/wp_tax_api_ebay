@@ -78,8 +78,8 @@ final class SettingsScreen
             /* translators: 1: eBay user name, 2: date, 3: date the consent runs out */
             __('Connected as %1$s since %2$s. Consent valid until %3$s.', 'taxebay'),
             $connection['username'],
-            $connection['connected_at'],
-            $connection['refresh_expires'] > 0 ? wp_date('Y-m-d', $connection['refresh_expires']) : '?'
+            \Taxmod\WordPress\Admin\ListPage::date($connection['connected_at']) ?: $connection['connected_at'],
+            $connection['refresh_expires'] > 0 ? \Taxmod\WordPress\Admin\ListPage::date($connection['refresh_expires']) : '?'
         )) . '</p>'
             . (Settings::needsReconnect() ? '<p class="notice notice-warning inline">' . esc_html__('The module asks for more rights since your consent (shipping). Press «Connect again».', 'taxebay') . '</p>' : '')
             . '<p>' . (self::sharedLayout() ? '' : $this->action('taxebay_check', __('Test connection', 'taxebay'), true) . ' ')
@@ -259,6 +259,6 @@ final class SettingsScreen
     {
         $url = wp_nonce_url(admin_url('admin-post.php?action=' . $action), $action);
 
-        return '<a class="button' . ($primary ? ' button-primary' : '') . '" href="' . esc_url($url) . '">' . esc_html($label) . '</a>';
+        return \Taxmod\WordPress\Admin\ListPage::button($label, $url, $primary);
     }
 }

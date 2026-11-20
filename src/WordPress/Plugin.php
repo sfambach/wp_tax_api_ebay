@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.81';
+    public const VERSION    = '0.0.82';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -72,10 +72,11 @@ final class Plugin
     {
         $plugin = new self();
 
-        // D-1409, D-1415: this release stands on the modeller 0.2.123 (shared parser frame, HTTP block, ListPage::acting); an older one says so.
+        // D-1409, D-1415: this release stands on the modeller 0.2.172 (shared parser frame, HTTP block, ListPage::acting; ListPage::date/money/button,
+        // D-1500); an older one says so — asked by version, not by loading its classes (D-1187).
         add_action('admin_notices', static function (): void {
-            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && ! interface_exists(\Taxmod\Core\Http\HttpTransport::class)) {
-                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.123 or later.', 'taxebay') . '</p></div>';
+            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.172', '<')) {
+                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.172 or later.', 'taxebay') . '</p></div>';
             }
         });
         add_action('admin_menu', $plugin->registerMenu(...), 20);
