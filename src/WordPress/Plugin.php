@@ -45,7 +45,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.83';
+    public const VERSION    = '0.0.84';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -75,11 +75,11 @@ final class Plugin
         // D-1500: the German texts in languages/ — WordPress finds a plugin's own folder only when asked.
         add_action('init', static fn () => load_plugin_textdomain('taxebay', false, dirname(plugin_basename(dirname(__DIR__, 2) . '/wp-tax-api-ebay.php')) . '/languages'), 1);
 
-        // D-1409, D-1415: this release stands on the modeller 0.2.173 (shared parser frame, HTTP block, ListPage::acting; ListPage::date/money/button,
+        // D-1409, D-1415: this release stands on the modeller 0.2.174 (shared parser frame, HTTP block, ListPage::acting; ListPage::date/money/button,
         // D-1500); an older one says so — asked by version, not by loading its classes (D-1187).
         add_action('admin_notices', static function (): void {
-            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.173', '<')) {
-                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.173 or later.', 'taxebay') . '</p></div>';
+            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.174', '<')) {
+                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.174 or later.', 'taxebay') . '</p></div>';
             }
         });
         add_action('admin_menu', $plugin->registerMenu(...), 20);

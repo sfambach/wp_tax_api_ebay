@@ -169,7 +169,7 @@ return [
         'from DHL\'s mail'                                                               => 'aus der DHL-Mail',
         'lost in the post'                                                               => 'auf dem Postweg verloren',
         'needs the Taxonomy Modeller 0.1.35 or later — the module stays off until then.' => 'braucht den Taxonomy Modeller ab 0.1.35 — bis dahin bleibt das Modul aus.',
-        'needs the Taxonomy Modeller 0.2.173 or later.'                                  => 'braucht den Taxonomy Modeller ab 0.2.173.',
+        'needs the Taxonomy Modeller 0.2.174 or later.'                                  => 'braucht den Taxonomy Modeller ab 0.2.174.',
         'never (Inbox button only)'                                                      => 'nie (nur Knopf im Eingang)',
         'no label matched yet — pick one or paste the link'                              => 'noch kein Etikett zugeordnet — eines wählen oder den Link einfügen',
         'not all paid yet'                                                               => 'noch nicht alles bezahlt',
