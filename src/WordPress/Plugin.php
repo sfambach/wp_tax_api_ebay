@@ -15,7 +15,6 @@ use TaxEbay\Core\Purchases\PurchaseMapper;
 use TaxEbay\Core\Purchases\PurchasesClient;
 use TaxEbay\Core\Shipping\DhlLabelLink;
 use TaxEbay\Core\Shipping\LabelMatch;
-use TaxEbay\Core\Shipping\LabelText;
 use TaxEbay\Core\Shipping\OpenShipment;
 use TaxEbay\Core\Shipping\ParcelList;
 use TaxEbay\Core\Shipping\Parcels;
@@ -45,7 +44,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.85';
+    public const VERSION    = '0.0.86';
     public const CAPABILITY = 'manage_options';
     public const PAGE       = 'taxebay';
 
@@ -423,7 +422,7 @@ final class Plugin
     {
         $labels = [];
 
-        foreach ((array) apply_filters('taxmail_dhl_labels', []) as $label) {
+        foreach ((array) apply_filters('taxmail_shipping_labels', []) as $label) {
             $links = array_values(array_filter(array_map('strval', (array) ($label['links'] ?? [])), DhlLabelLink::accepts(...)));
 
             if ($links !== []) {
@@ -744,7 +743,7 @@ final class Plugin
 
         foreach (self::dhlLabels() as $label) {
             if ($label['cart'] !== '' && in_array($url, $label['links'], true)) {
-                do_action('taxmail_dhl_label_printed', $label['cart']);
+                do_action('taxmail_shipping_label_printed', $label['cart']);
                 break;
             }
         }
@@ -851,13 +850,23 @@ final class Plugin
 
             $pdf = self::labelPdf($link);
             $keep = max(1, (int) $keep);
-            set_transient(self::labelKey($link), $pdf === null ? [] : LabelText::of($pdf), $pdf === null ? min(HOUR_IN_SECONDS, $keep) : $keep);
+            set_transient(self::labelKey($link), $pdf === null ? [] : self::labelLines($pdf), $pdf === null ? min(HOUR_IN_SECONDS, $keep) : $keep);
             unset($missing[$link]);
         }
 
         if ($missing !== []) {
             wp_schedule_single_event(time() + MINUTE_IN_SECONDS, self::LABELS_HOOK, [$missing]);
         }
+    }
+
+    /**
+     * D-1511: the label's printed text comes from the label module, the one reader of postage PDFs; without it no label matches.
+     *
+     * @return list<string>
+     */
+    private static function labelLines(string $pdf): array
+    {
+        return array_values(array_map('strval', (array) apply_filters('taxmod_label_pdf_text', [], $pdf)));
     }
 
     public function handleInsert(): void

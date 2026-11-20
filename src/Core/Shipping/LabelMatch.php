@@ -3,7 +3,7 @@
 namespace TaxEbay\Core\Shipping;
 
 /**
- * Which parcel a DHL label belongs to: the recipient's name and postcode printed on it (LabelText) against the
+ * Which parcel a DHL label belongs to: the recipient's name and postcode printed on it (read by the label module, D-1511) against the
  * address eBay gives. DHL's mail itself names no order.
  */
 final class LabelMatch
