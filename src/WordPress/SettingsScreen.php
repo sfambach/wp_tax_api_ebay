@@ -2,6 +2,10 @@
 
 namespace TaxEbay\WordPress;
 
+use Taxmod\Core\Description\InputKind;
+use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Draw\SelectMarkup;
+
 /**
  * The eBay settings: app keys, the URLs he enters at eBay, connect, test, disconnect. Returns its HTML (CD-8).
  * It is the «eBay» tab of the modeller's Configuration page (D-945); `page()` is only the stand-alone fallback for a
@@ -96,14 +100,10 @@ final class SettingsScreen
     /** Which printer the parcel insert is laid out for (page «eBay shipping»). */
     private function insertFormat(): string
     {
-        $options = '';
-
-        foreach ([Settings::INSERT_A6 => __('A6 (sheet printer)', 'taxebay'), Settings::INSERT_LABEL => __('62 mm label tape (Brother QL)', 'taxebay')] as $value => $label) {
-            $options .= '<option value="' . esc_attr($value) . '"' . selected(Settings::insertFormat(), $value, false) . '>' . esc_html($label) . '</option>';
-        }
+        $formats = [Settings::INSERT_A6 => __('A6 (sheet printer)', 'taxebay'), Settings::INSERT_LABEL => __('62 mm label tape (Brother QL)', 'taxebay')];
 
         return '<h3>' . esc_html__('Shipping', 'taxebay') . '</h3><p><label for="taxebay-insert-format">' . esc_html__('Parcel insert', 'taxebay')
-            . '</label> <select id="taxebay-insert-format" name="taxebay_insert_format">' . $options . '</select> <a href="'
+            . '</label> ' . SelectMarkup::of('taxebay_insert_format', $formats, Settings::insertFormat(), false, attributes: ['id' => 'taxebay-insert-format']) . ' <a href="'
             . esc_url(admin_url('admin.php?page=' . ShippingScreen::PAGE)) . '">' . esc_html__('Open eBay shipping', 'taxebay') . '</a></p>';
     }
 
@@ -180,19 +180,13 @@ final class SettingsScreen
             . ' <a href="' . esc_url(admin_url('admin.php?page=taxmod-inbox')) . '">' . esc_html__('Open the Inbox', 'taxebay') . '</a></p>';
 
         if ($withSchedule) {
-            $html .= '<p><label for="taxebay-schedule">' . esc_html__('Fetch automatically', 'taxebay') . '</label> <select id="taxebay-schedule" name="taxebay_schedule">';
-
-            foreach ([
+            $html .= '<p><label for="taxebay-schedule">' . esc_html__('Fetch automatically', 'taxebay') . '</label> ' . SelectMarkup::of('taxebay_schedule', [
                 ''               => __('never (Inbox button only)', 'taxebay'),
                 'hourly'         => __('every hour', 'taxebay'),
                 'fourtimesdaily' => __('four times a day', 'taxebay'),
                 'twicedaily'     => __('twice a day', 'taxebay'),
                 'daily'          => __('once a day', 'taxebay'),
-            ] as $value => $label) {
-                $html .= '<option value="' . esc_attr($value) . '"' . selected(Settings::schedule(), $value, false) . '>' . esc_html($label) . '</option>';
-            }
-
-            $html .= '</select></p>';
+            ], Settings::schedule(), false, attributes: ['id' => 'taxebay-schedule']) . '</p>';
         }
 
         if (Settings::connection() !== null) {
@@ -238,16 +232,14 @@ final class SettingsScreen
             . $this->inputRow('client_id', __('App ID (Client ID)', 'taxebay'), 'text', $stored['client_id'], '')
             . $this->inputRow('client_secret', __('Cert ID (Client Secret)', 'taxebay'), 'password', '', $hasSecret ? __('stored — leave empty to keep it', 'taxebay') : '')
             . $this->inputRow('runame', __('RuName', 'taxebay'), 'text', $stored['runame'], '')
-            . '<tr><th scope="row">' . esc_html__('Environment', 'taxebay') . '</th><td><label><input type="checkbox" name="taxebay_sandbox" value="1"'
-            . checked($stored['sandbox'], true, false) . '> ' . esc_html__('Sandbox keyset', 'taxebay') . '</label></td></tr>'
+            . '<tr><th scope="row">' . esc_html__('Environment', 'taxebay') . '</th><td><label>' . ListPage::field(InputKind::Flag, 'taxebay_sandbox', $stored['sandbox'] ? '1' : '0') . ' ' . esc_html__('Sandbox keyset', 'taxebay') . '</label></td></tr>'
             . '</tbody></table>';
     }
 
     private function inputRow(string $name, string $label, string $type, string $value, string $placeholder): string
     {
         return '<tr><th scope="row"><label for="taxebay-' . esc_attr($name) . '">' . esc_html($label) . '</label></th>'
-            . '<td><input type="' . esc_attr($type) . '" class="regular-text" autocomplete="off" id="taxebay-' . esc_attr($name)
-            . '" name="taxebay_' . esc_attr($name) . '" value="' . esc_attr($value) . '" placeholder="' . esc_attr($placeholder) . '"></td></tr>';
+            . '<td>' . ListPage::field($type === 'password' ? InputKind::Secret : InputKind::Line, 'taxebay_' . $name, $value, ['id' => 'taxebay-' . $name, 'size' => 40, 'placeholder' => $placeholder]) . '</td></tr>';
     }
 
     private function urlRow(string $label, string $url): string

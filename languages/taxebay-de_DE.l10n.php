@@ -6,6 +6,7 @@ return [
     'language'           => 'de_DE',
     'plural-forms'       => 'nplurals=2; plural=(n != 1);',
     'messages'           => [
+        'pcs' => 'Stück',
         '%d parcel'                                                                      => '%d Paket' . "\0" . '%d Pakete',
         '%s goes out again: back in «Open».'                                             => '%s geht erneut raus: zurück in «Offen».',
         '%s refunded'                                                                    => '%s erstattet',
@@ -168,7 +169,7 @@ return [
         'from DHL\'s mail'                                                               => 'aus der DHL-Mail',
         'lost in the post'                                                               => 'auf dem Postweg verloren',
         'needs the Taxonomy Modeller 0.1.35 or later — the module stays off until then.' => 'braucht den Taxonomy Modeller ab 0.1.35 — bis dahin bleibt das Modul aus.',
-        'needs the Taxonomy Modeller 0.2.172 or later.'                                  => 'braucht den Taxonomy Modeller ab 0.2.172.',
+        'needs the Taxonomy Modeller 0.2.173 or later.'                                  => 'braucht den Taxonomy Modeller ab 0.2.173.',
         'never (Inbox button only)'                                                      => 'nie (nur Knopf im Eingang)',
         'no label matched yet — pick one or paste the link'                              => 'noch kein Etikett zugeordnet — eines wählen oder den Link einfügen',
         'not all paid yet'                                                               => 'noch nicht alles bezahlt',
