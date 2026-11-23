@@ -45,7 +45,11 @@ final class Plugin
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
     public const VERSION    = '0.0.86';
-    public const CAPABILITY = 'manage_options';
+    /** The eBay connection is set up in the configuration (D-1585); the shipping page and its acts are shipping. */
+    public const CAPABILITY = \Taxmod\WordPress\Rights::CONFIGURE;
+
+    /** The acts of the shipping page; every other act changes the connection. */
+    private const SHIPPING_ACTS = [ShippingScreen::SHIP, ShippingScreen::RESEND, ShippingScreen::RESEND_TRACKING, ShippingScreen::RESEND_UNDO, ShippingScreen::STAGE, ShippingScreen::LABEL_PDF, ShippingScreen::LABEL_PRINTED, ShippingScreen::INSERT, ShippingScreen::DHL_REFRESH];
     public const PAGE       = 'taxebay';
 
     /** The OAuth state of one user's pending consent — it plays the nonce for the return from eBay. */
@@ -75,10 +79,10 @@ final class Plugin
         add_action('init', static fn () => load_plugin_textdomain('taxebay', false, dirname(plugin_basename(dirname(__DIR__, 2) . '/wp-tax-api-ebay.php')) . '/languages'), 1);
 
         // D-1409, D-1415: this release stands on the modeller 0.2.174 (shared parser frame, HTTP block, ListPage::acting; ListPage::date/money/button,
-        // D-1500); an older one says so — asked by version, not by loading its classes (D-1187).
+        // D-1500), the rights table on 0.2.237 (D-1585); an older one says so — asked by version, not by loading its classes (D-1187).
         add_action('admin_notices', static function (): void {
-            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.174', '<')) {
-                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.174 or later.', 'taxebay') . '</p></div>';
+            if (class_exists(\Taxmod\WordPress\Plugin::class, false) && version_compare(\Taxmod\WordPress\Plugin::VERSION, '0.2.237', '<')) {
+                print '<div class="notice notice-warning"><p><strong>Taxmod eBay:</strong> ' . esc_html__('needs the Taxonomy Modeller 0.2.237 or later.', 'taxebay') . '</p></div>';
             }
         });
         add_action('admin_menu', $plugin->registerMenu(...), 20);
@@ -336,7 +340,7 @@ final class Plugin
             default                                                  => 'tools.php',
         };
 
-        $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), self::CAPABILITY, ShippingScreen::PAGE, function (): void {
+        $hook = add_submenu_page($parent, __('eBay shipping', 'taxebay'), __('eBay shipping', 'taxebay'), \Taxmod\WordPress\Rights::SHIP, ShippingScreen::PAGE, function (): void {
             $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : Stages::OPEN;
             $orderBy = isset($_GET['orderby']) ? sanitize_key(wp_unslash($_GET['orderby'])) : 'date';
             $list = new ParcelList(
@@ -378,7 +382,7 @@ final class Plugin
      */
     public static function processBar(string $html, string $area): string
     {
-        if ($area !== 'outbound' || $html !== '' || ! current_user_can(self::CAPABILITY) || ! method_exists(ListPage::class, 'steps')) {
+        if ($area !== 'outbound' || $html !== '' || ! current_user_can(\Taxmod\WordPress\Rights::SHIP) || ! method_exists(ListPage::class, 'steps')) {
             return $html;
         }
 
@@ -1344,8 +1348,10 @@ final class Plugin
 
     private function guard(string $action): void
     {
-        if (! current_user_can(self::CAPABILITY)) {
-            self::fail(__('You may not change the eBay connection.', 'taxebay'));
+        $shipping = in_array($action, self::SHIPPING_ACTS, true);
+
+        if (! current_user_can($shipping ? \Taxmod\WordPress\Rights::SHIP : self::CAPABILITY)) {
+            self::fail($shipping ? __('You may not ship eBay orders.', 'taxebay') : __('You may not change the eBay connection.', 'taxebay'));
         }
 
         if (method_exists(\Taxmod\WordPress\Admin\ListPage::class, 'nonce')) {
