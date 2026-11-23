@@ -44,7 +44,7 @@ final class Plugin
     private const BOOK_LOSS = 'taxmod_stock_book_loss';
     private const CANCEL_LOSS = 'taxmod_stock_cancel_loss';
 
-    public const VERSION    = '0.0.86';
+    public const VERSION    = '0.0.87';
     /** The eBay connection is set up in the configuration (D-1585); the shipping page and its acts are shipping. */
     public const CAPABILITY = \Taxmod\WordPress\Rights::CONFIGURE;
 
